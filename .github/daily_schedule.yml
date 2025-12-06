@@ -1,0 +1,42 @@
+name: Toram Daily Report
+
+# 設定觸發時機
+on:
+  schedule:
+    # GitHub 使用 UTC 時間 (世界協調時間)
+    # 台灣時間 (UTC+8) 晚上 22:00 = UTC 時間 下午 14:00
+    # 格式為: '分 時 日 月 星期'
+    - cron: '0 14 * * *'
+  
+  # 允許你在 GitHub 網頁上按按鈕手動測試 (不用等到晚上 10 點)
+  workflow_dispatch:
+
+jobs:
+  build-and-run:
+    runs-on: ubuntu-latest # 使用 Linux 環境
+
+    steps:
+      # 1. 下載你的程式碼到虛擬環境
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. 設定 Python 環境 (這裡用 3.9)
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      # 3. 安裝必要的套件
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # 這裡必須安裝 streamlit，因為你的 utils 裡面有 import 它
+          pip install pandas numpy requests plotly scipy streamlit
+          # 或者如果你有 requirements.txt，也可以用 pip install -r requirements.txt
+
+      # 4. 執行你的每日報告腳本
+      - name: Run Daily Report
+        env:
+          # 把 GitHub 後台設定的密碼 (Webhook) 傳入程式環境
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python daily_report.py
