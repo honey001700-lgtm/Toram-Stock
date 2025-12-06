@@ -210,7 +210,7 @@ def main():
 
     if highlights:
         fields = []
-        for h in highlights[:8]: 
+        for h in highlights[:15]: 
             emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
             tag_display = f"\n└ {', '.join(h['tags'])}" if h['tags'] else ""
 
