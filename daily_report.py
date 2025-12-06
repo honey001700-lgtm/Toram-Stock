@@ -4,8 +4,9 @@ import requests
 import pandas as pd
 import datetime
 import json
+import time  # <--- 新增此行，用於錯誤等待
 
-# 引用模組
+# 引用模組 (請確保這些檔案在您的專案目錄中)
 from utils.preprocess import load_data, filter_and_prepare_data
 from utils.regression import calculate_r_squared
 from analysis.trend import analyze_trend
@@ -20,11 +21,11 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # ==========================================
-# 🤖 AI 寫手核心 (針對 Gemini 2.0 Flash 優化)
+# 🤖 AI 寫手核心 (修復版：自動降級與重試)
 # ==========================================
 def generate_ai_script(market_stats, highlights):
     """
-    使用 REST API 強制呼叫 Gemini 2.0 Flash
+    使用 REST API 呼叫 Gemini (優先 2.0 Flash，失敗自動降級 1.5 Flash)
     """
     if not GEMINI_API_KEY:
         print("⚠️ 警告：未設定 GEMINI_API_KEY")
@@ -57,9 +58,6 @@ def generate_ai_script(market_stats, highlights):
     5. 使用 Markdown 與 Emoji，語氣流暢自然。
     """
 
-    # 2. 設定 API 網址 (Gemini 2.0 Flash)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    
     headers = {'Content-Type': 'application/json'}
     data = {
         "contents": [{
@@ -67,32 +65,41 @@ def generate_ai_script(market_stats, highlights):
         }]
     }
 
-    try:
-        print(f"🧠 正在呼叫 Gemini 2.0 Flash ...")
-        response = requests.post(url, headers=headers, json=data)
-        
-        if response.status_code == 200:
-            result = response.json()
-            text = result['candidates'][0]['content']['parts'][0]['text']
-            color = 5763719 if market_stats['up'] >= market_stats['down'] else 15548997
-            return text, color
-        else:
-            print(f"❌ Gemini API Error: {response.status_code}")
-            # 如果 2.0 失敗 (例如地區限制)，自動降級回 1.5 Flash
-            if response.status_code == 404:
-                print("🔄 2.0 模型連線失敗，嘗試切換回 1.5-flash...")
-                url_fallback = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-                response_fb = requests.post(url_fallback, headers=headers, json=data)
-                if response_fb.status_code == 200:
-                    result = response_fb.json()
-                    text = result['candidates'][0]['content']['parts'][0]['text']
-                    return text, 5763719
-            
-            return f"機器人連線失敗 (HTTP {response.status_code})", 0
+    # 定義模型清單 (優先順序)
+    models = [
+        ("gemini-2.0-flash", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"),
+        ("gemini-1.5-flash", f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}")
+    ]
 
-    except Exception as e:
-        print(f"❌ Request Failed: {e}")
-        return "機器人腦袋打結了 (網路錯誤)...", 0
+    for model_name, url in models:
+        try:
+            print(f"🧠 正在呼叫 {model_name} ...")
+            response = requests.post(url, headers=headers, json=data)
+            
+            if response.status_code == 200:
+                # 成功取得回應
+                result = response.json()
+                try:
+                    text = result['candidates'][0]['content']['parts'][0]['text']
+                    # 顏色邏輯：漲多於跌顯示綠色(或藍色)，否則紅色
+                    color = 5763719 if market_stats['up'] >= market_stats['down'] else 15548997
+                    return text, color
+                except (KeyError, IndexError):
+                    print(f"❌ {model_name} 回傳格式異常 (可能是內容被過濾)")
+                    continue # 嘗試下一個模型
+            else:
+                print(f"⚠️ {model_name} 連線失敗: HTTP {response.status_code}")
+                # 如果是 Rate Limit (429)，休息一下再試下一個模型
+                if response.status_code == 429:
+                    print("⏳ 觸發頻率限制，休息 2 秒後切換模型...")
+                    time.sleep(2)
+        
+        except Exception as e:
+            print(f"❌ {model_name} 發生程式錯誤: {e}")
+            continue # 嘗試下一個模型
+
+    # 如果所有模型都失敗
+    return "機器人腦袋打結了 (所有模型連線失敗，請檢查 API 配額)...", 0
 
 # ==========================================
 # 🛠️ Discord 發送功能
@@ -132,6 +139,10 @@ def main():
     # 2. 時間範圍 (24h)
     now = datetime.datetime.now()
     yesterday = now - pd.Timedelta(hours=24)
+    # 確保時間欄位是 datetime 格式
+    if not pd.api.types.is_datetime64_any_dtype(df['時間']):
+        df['時間'] = pd.to_datetime(df['時間'])
+
     recent_df = df[df['時間'] >= yesterday]
     active_items = recent_df['物品'].unique().tolist()
     
@@ -147,6 +158,7 @@ def main():
 
         latest_price = item_df.iloc[-1]['單價']
         try:
+            # 找 24 小時前的價格，若無則取最早價格
             prev_price = item_df[item_df['時間'] <= yesterday].iloc[-1]['單價']
         except IndexError:
             prev_price = item_df.iloc[0]['單價']
@@ -163,6 +175,7 @@ def main():
         events = detect_events(item_df)
         
         tags = []
+        # 設定波動門檻，例如漲跌超過 10%
         is_high = False
         if abs(change_pct) >= 10: is_high = True
         
