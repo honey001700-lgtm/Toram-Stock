@@ -86,12 +86,12 @@ def generate_ai_script(market_stats, highlights):
         top_movers_str += f"- {h['item']}: {h['change_pct']:+.1f}% (${h['price']:,.0f}) [{tags_str}]\n"
 
     prompt = f"""
-    角色：托蘭虛寶交易分析師(托蘭小姊姊)。語氣：活潑、溫暖、專業，像台灣 YouTuber。
+    角色：托蘭市場交易分析師(托蘭小姊姊)。語氣：客觀、冷靜、專業，像台灣 YouTuber。
     數據：{date_str}，上漲{market_stats['up']}家 / 下跌{market_stats['down']}家。
     焦點物品：\n{top_movers_str}
     任務：寫一篇約 200 字的 Discord 日報。
     結構：1.開場問候 2.盤勢多空判斷 3.重點物品點評(漲則興奮,跌則提醒) 4.結尾祝福。
-    要求：使用 Emoji，不要太生硬。
+    要求：重點在於數據分析，但情緒用語也不要太少。使用 Emoji，不要太生硬。
     """
 
     # --- 3. 輪詢呼叫 (失敗就換下一個) ---
