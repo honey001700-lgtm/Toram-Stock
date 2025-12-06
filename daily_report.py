@@ -143,7 +143,7 @@ def send_discord_webhook(embeds):
         print(f"❌ 發送失敗: {e}")
 
 # ==========================================
-# 🚀 主程式 (垂直條列式標籤版)
+# 🚀 主程式 (修正時區 UTC+8)
 # ==========================================
 def main():
     print("🚀 SYSTEM CHECK: 腳本開始執行...")
@@ -152,14 +152,25 @@ def main():
     df, err = load_data(SHEET_URL)
     if df.empty: return
 
-    # 2. 時間範圍 (24h)
-    now = datetime.datetime.now()
-    yesterday = now - pd.Timedelta(hours=24)
+    # 2. 設定時間 (強制使用台灣時間 UTC+8)
+    # GitHub Server 是 UTC，所以我們要 +8 小時
+    utc_now = datetime.datetime.utcnow()
+    tw_now = utc_now + datetime.timedelta(hours=8)
+    
+    print(f"🕒 台灣時間: {tw_now.strftime('%Y-%m-%d %H:%M')}")
+
+    # 統計範圍：台灣時間過去 24 小時
+    yesterday = tw_now - pd.Timedelta(hours=24)
+    
+    # 確保資料表的時間欄位格式正確
     if not pd.api.types.is_datetime64_any_dtype(df['時間']):
         df['時間'] = pd.to_datetime(df['時間'])
 
+    # 篩選資料 (這裡要注意：如果你的 Google Sheet 記錄的是台灣時間，這樣比對才完全正確)
     recent_df = df[df['時間'] >= yesterday]
     active_items = recent_df['物品'].unique().tolist()
+    
+    print(f"🔍 分析範圍: {yesterday.strftime('%m/%d %H:%M')} ~ {tw_now.strftime('%m/%d %H:%M')}")
     
     highlights = []
     market_stats = {'up': 0, 'down': 0, 'total': 0}
@@ -200,12 +211,13 @@ def main():
     ai_script, color = generate_ai_script(market_stats, highlights)
 
     # ==========================================
-    # 🎨 5. 製作 Embeds (垂直標籤排版)
+    # 🎨 5. 製作 Embeds
     # ==========================================
     embeds = []
     
+    # 注意這裡改用 tw_now
     embeds.append({
-        "title": f"🎙️ 托蘭市場日報 ({now.strftime('%m/%d')})",
+        "title": f"🎙️ 托蘭市場日報 ({tw_now.strftime('%m/%d')})",
         "description": ai_script,
         "color": color,
         "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
@@ -213,14 +225,11 @@ def main():
 
     if highlights:
         fields = []
-        # 顯示前 15 名
         for h in highlights[:15]: 
             emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
             
-            # --- 標籤轉譯與排版邏輯 ---
             pretty_tags = []
             raw_tags = h.get('tags', [])
-            
             for tag in raw_tags:
                 if "新高" in tag: pretty_tags.append("🔥 創歷史新高")
                 elif "新低" in tag: pretty_tags.append("🧊 創歷史新低")
@@ -231,11 +240,7 @@ def main():
                 elif "三角" in tag: pretty_tags.append("📐 三角收斂")
                 else: pretty_tags.append(tag) 
 
-            # ✨ 關鍵修改：每個標籤都換行，並加上 '└ ' 前綴
             if pretty_tags:
-                # 這裡會變成：
-                # └ 🔥 創歷史新高
-                # └ 📐 三角收斂
                 tag_lines = "\n".join([f"└ {t}" for t in pretty_tags])
                 tag_display = f"\n{tag_lines}"
             else:
@@ -251,7 +256,8 @@ def main():
             "title": "📋 精選數據看板",
             "color": 3447003,
             "fields": fields,
-            "footer": {"text": f"統計時間: {now.strftime('%Y-%m-%d %H:%M')}"}
+            # 這裡也改用 tw_now
+            "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
         })
 
     # 6. 發送
