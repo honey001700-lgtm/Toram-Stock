@@ -16,14 +16,15 @@ from analysis.patterns import detect_patterns, detect_events
 # ==========================================
 SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQtSvfsvYpDjQutAO9L4AV1Rq8XzZAQEAZcLZxl9JsSvxCo7X2JsaFTVdTAQwGNQRC2ySe5OPJaTzp9/pub?gid=915078159&single=true&output=csv"
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# 使用 strip() 去除可能不小心複製到的空白鍵或換行符號
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # ==========================================
-# 🤖 AI 寫手核心 (REST API 版 - 1.5 Flash)
+# 🤖 AI 寫手核心 (自動切換模型版)
 # ==========================================
 def generate_ai_script(market_stats, highlights):
     """
-    使用 REST API 呼叫 Gemini 1.5 Flash
+    使用 REST API 呼叫 Gemini，具備自動切換模型功能 (1.5 Flash -> Pro)
     """
     if not GEMINI_API_KEY:
         print("⚠️ 警告：未設定 GEMINI_API_KEY")
@@ -56,36 +57,45 @@ def generate_ai_script(market_stats, highlights):
     5. 使用 Markdown 與 Emoji，語氣流暢自然。
     """
 
-    # 2. 設定 API 網址 (使用 gemini-1.5-flash)
-    # 這是最穩定的版本，不用擔心 404 錯誤
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
+    # 2. 定義要嘗試的模型列表 (優先用 1.5 Flash，失敗則用 Pro)
+    models_to_try = [
+        "gemini-1.5-flash", # 首選：速度快、免費額度高
+        "gemini-pro"        # 備選：舊版，相容性最高
+    ]
 
-    try:
-        # 3. 發送請求
-        print(f"🧠 正在呼叫 Gemini API ({url.split('?')[0]}...)")
-        response = requests.post(url, headers=headers, json=data)
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         
-        if response.status_code == 200:
-            result = response.json()
-            # 解析回傳結果
-            text = result['candidates'][0]['content']['parts'][0]['text']
-            color = 5763719 if market_stats['up'] >= market_stats['down'] else 15548997
-            return text, color
-        else:
-            print(f"❌ Gemini API Error: {response.status_code}")
-            print(f"❌ Error Details: {response.text}")
-            return f"機器人連線失敗 (HTTP {response.status_code})", 0
+        headers = {'Content-Type': 'application/json'}
+        data = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }]
+        }
 
-    except Exception as e:
-        print(f"❌ Request Failed: {e}")
-        return "機器人腦袋打結了 (網路錯誤)...", 0
+        try:
+            print(f"🧠 嘗試呼叫 AI 模型: {model_name} ...")
+            response = requests.post(url, headers=headers, json=data)
+            
+            if response.status_code == 200:
+                # 成功！
+                result = response.json()
+                text = result['candidates'][0]['content']['parts'][0]['text']
+                color = 5763719 if market_stats['up'] >= market_stats['down'] else 15548997
+                return text, color
+            elif response.status_code == 404:
+                print(f"❌ 模型 {model_name} 不存在 (404)，嘗試下一個...")
+                continue # 換下一個模型試試
+            else:
+                print(f"❌ API Error ({model_name}): {response.status_code} - {response.text}")
+                # 如果是其他錯誤 (如 400 key 錯誤)，通常換模型也沒用，直接回傳錯誤
+                return f"機器人連線失敗 (HTTP {response.status_code})", 0
+
+        except Exception as e:
+            print(f"❌ Request Failed ({model_name}): {e}")
+            continue
+
+    return "機器人腦袋打結了 (所有模型嘗試皆失敗)...", 0
 
 # ==========================================
 # 🛠️ Discord 發送功能
@@ -193,7 +203,7 @@ def main():
 
     if highlights:
         fields = []
-        for h in highlights[:9]: 
+        for h in highlights[:8]: 
             emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
             tag_display = f"\n└ {', '.join(h['tags'])}" if h['tags'] else ""
 
