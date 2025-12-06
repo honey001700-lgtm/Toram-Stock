@@ -1,10 +1,12 @@
-name: Debug SDK
+name: Toram Daily Report
 
 on:
-  workflow_dispatch: # 讓我們可以手動按按鈕觸發
+  schedule:
+    - cron: '0 14 * * *' # 每天台灣時間 22:00
+  workflow_dispatch:
 
 jobs:
-  debug-run:
+  run-report:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,10 +20,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests google-generativeai
+          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
 
-      - name: 🛠️ Run SDK Debugger
+      - name: Run Daily Report
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python debug_sdk.py
+        run: python daily_report.py
