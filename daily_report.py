@@ -143,7 +143,7 @@ def send_discord_webhook(embeds):
         print(f"❌ 發送失敗: {e}")
 
 # ==========================================
-# 🚀 主程式
+# 🚀 主程式 (垂直條列式標籤版)
 # ==========================================
 def main():
     print("🚀 SYSTEM CHECK: 腳本開始執行...")
@@ -195,35 +195,63 @@ def main():
             })
 
     # 4. 生成 AI 報告
-    if highlights:
-        highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+    highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
     
     ai_script, color = generate_ai_script(market_stats, highlights)
 
-    # 5. 製作 Embeds
-    embeds = [{
+    # ==========================================
+    # 🎨 5. 製作 Embeds (垂直標籤排版)
+    # ==========================================
+    embeds = []
+    
+    embeds.append({
         "title": f"🎙️ 托蘭市場日報 ({now.strftime('%m/%d')})",
         "description": ai_script,
         "color": color,
         "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
-    }]
+    })
 
     if highlights:
         fields = []
+        # 顯示前 15 名
         for h in highlights[:15]: 
             emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
-            tag_display = f"\n└ {', '.join(h['tags'])}" if h['tags'] else ""
+            
+            # --- 標籤轉譯與排版邏輯 ---
+            pretty_tags = []
+            raw_tags = h.get('tags', [])
+            
+            for tag in raw_tags:
+                if "新高" in tag: pretty_tags.append("🔥 創歷史新高")
+                elif "新低" in tag: pretty_tags.append("🧊 創歷史新低")
+                elif "頭肩頂" in tag: pretty_tags.append("👤 頭肩頂(看跌)")
+                elif "頭肩底" in tag: pretty_tags.append("🧘 頭肩底(看漲)")
+                elif "雙重頂" in tag: pretty_tags.append("⛰️ M頭(看跌)")
+                elif "雙重底" in tag: pretty_tags.append("🇼 W底(看漲)")
+                elif "三角" in tag: pretty_tags.append("📐 三角收斂")
+                else: pretty_tags.append(tag) 
 
+            # ✨ 關鍵修改：每個標籤都換行，並加上 '└ ' 前綴
+            if pretty_tags:
+                # 這裡會變成：
+                # └ 🔥 創歷史新高
+                # └ 📐 三角收斂
+                tag_lines = "\n".join([f"└ {t}" for t in pretty_tags])
+                tag_display = f"\n{tag_lines}"
+            else:
+                tag_display = ""
+            
             fields.append({
-                "name": f"{h['item']}",
-                "value": f"{emoji} {h['change_pct']:+.1f}% | ${h['price']:,.0f}{tag_display}",
+                "name": f"{h['item']}", 
+                "value": f"{emoji} `{h['change_pct']:+.1f}%` | ${h['price']:,.0f}{tag_display}",
                 "inline": True
             })
             
         embeds.append({
             "title": "📋 精選數據看板",
             "color": 3447003,
-            "fields": fields
+            "fields": fields,
+            "footer": {"text": f"統計時間: {now.strftime('%Y-%m-%d %H:%M')}"}
         })
 
     # 6. 發送
