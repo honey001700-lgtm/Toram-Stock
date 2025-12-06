@@ -76,7 +76,7 @@ def main():
         change_pct = ((latest_price - prev_price) / prev_price) * 100 if prev_price else 0
         
         # --- 3. 篩選邏輯 ---
-        tags = [] # 用來存純文字標籤 (型態、事件)
+        tags = [] 
         is_highlight = False
 
         # A. 價格劇烈波動
@@ -85,36 +85,36 @@ def main():
             
         # B. 強趨勢
         if r_squared and r_squared >= 0.75 and trend['多空強度'] > 70:
-            tags.append(f"📈 強力趨勢 (強度{trend['多空強度']})")
             is_highlight = True
             
-        # C. 型態
+        # C. 型態 (存入 tags)
         target_patterns = ["頭肩", "雙重", "三角", "通道"]
         found_p = [p['type'] for p in patterns if any(k in p['type'] for k in target_patterns)]
         if found_p:
-            tags.extend([f"👀 {p}" for p in found_p])
+            for p in found_p:
+                tags.append(f"型態: {p}")
             is_highlight = True
             
-        # D. 事件
+        # D. 事件 (存入 tags)
         event_types = [e['type'] for e in events if "新高" in e['type'] or "新低" in e['type']]
         if event_types:
-            tags.extend([f"🏆 {e}" for e in event_types])
+            for e in event_types:
+                tags.append(f"事件: {e}")
             is_highlight = True
 
         if is_highlight:
-            # 儲存原始數據以便稍後排版
             highlights.append({
                 "item": item,
                 "price": latest_price,
-                "change_pct": change_pct, # 存數字方便排序
+                "change_pct": change_pct,
                 "tags": tags,
                 "trend": trend['趨勢方向']
             })
 
-    # --- 4. 製作 Discord 報告 (全新排版) ---
+    # --- 4. 製作 Discord 報告 (清單樣式) ---
     embeds = []
     
-    # (A) 標題區
+    # 標題區
     summary_text = f"監測 {len(active_items)} 個物品 | 發現 {len(highlights)} 個重點關注"
     if not highlights:
         summary_text += "\n😴 市場平靜，無重大波動。"
@@ -122,58 +122,48 @@ def main():
     embeds.append({
         "title": f"📅 托蘭交易所日報 ({now.strftime('%Y-%m-%d')})",
         "description": summary_text,
-        "color": 3447003, # 深藍色
+        "color": 3447003, 
         "footer": {"text": "由 Streamlit Python Bot 自動生成"}
     })
 
-    # (B) 內容區
+    # 內容區
     if highlights:
-        # 🔥 修改排序：依照「漲跌幅絕對值」排序 (波動大的放最上面)，而不是看價格
+        # 依波動幅度排序
         highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
         
         fields = []
-        for h in highlights[:10]: # 限制前 10 名
+        # 限制顯示數量 (例如最多 15 個)，避免超過 Discord 限制
+        for h in highlights[:15]: 
             
-            # 準備數據
-            price_str = f"${h['price']:,.0f}"
+            lines = []
             
-            # 漲跌幅 emoji 與格式
+            # 第一行：價格
+            lines.append(f"- 💰 ${h['price']:,.0f}")
+            
+            # 第二行：漲跌幅
             if h['change_pct'] > 0:
-                emoji = "🚀"
-                change_str = f"+{h['change_pct']:.1f}%"
-                title_prefix = "📈"
+                lines.append(f"- 🚀 24h漲跌: +{h['change_pct']:.1f}%")
             elif h['change_pct'] < 0:
-                emoji = "🩸"
-                change_str = f"{h['change_pct']:.1f}%"
-                title_prefix = "📉"
+                lines.append(f"- 🩸 24h漲跌: {h['change_pct']:.1f}%")
             else:
-                emoji = "➖"
-                change_str = "0.0%"
-                title_prefix = "⚖️"
-
-            # 組合分析標籤 (如果有)
-            analysis_str = ""
-            if h['tags']:
-                # 把標籤用換行接起來，前面加個點
-                analysis_str = "\n" + "\n".join([f"> 🔸 {t}" for t in h['tags']])
+                lines.append(f"- ➖ 24h平盤")
             
-            # 組合 Value 字串 (Markdown 排版)
-            # > 引用符號會產生灰色背景條，讓價格更明顯
-            value_text = (
-                f"> 💰 **{price_str}**  (`{emoji} {change_str}`)\n"
-                f"> *{h['trend']}*{analysis_str}"
-            )
+            # 第三行以後：事件或型態 (如果有的話)
+            for tag in h['tags']:
+                lines.append(f"- {tag}")
+
+            # 組合字串
+            value_text = "\n".join(lines)
 
             fields.append({
-                "name": f"{title_prefix} {h['item']}", # 標題：📈 王之門牛王II
+                "name": f"💎 {h['item']}",
                 "value": value_text,
-                "inline": False # 🔴 關鍵：設為 False 讓它獨佔一行
+                "inline": True # ✅ 設為 True 開啟並排
             })
             
         embeds.append({
-            "title": "🚨 市場焦點掃描 (Top 10)",
-            "description": "依波動幅度排序",
-            "color": 15158332, # 紅色
+            "title": "🚨 市場焦點掃描",
+            "color": 15158332, 
             "fields": fields
         })
 
