@@ -1,49 +1,27 @@
-name: Toram Daily Report
+name: Debug SDK
 
-# 設定觸發時機
 on:
-  schedule:
-    # 台灣時間 (UTC+8) 晚上 22:00 = UTC 時間 下午 14:00
-    - cron: '0 14 * * *'
-  
-  # 允許手動觸發
-  workflow_dispatch:
+  workflow_dispatch: # 讓我們可以手動按按鈕觸發
 
 jobs:
-  build-and-run:
+  debug-run:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. 下載程式碼
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 2. 設定 Python 環境
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      # 3. 安裝套件
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
+          pip install requests google-generativeai
 
-      # ====================================================
-      # 👇 新增：API 診斷步驟 (如果這個失敗，Discord 會收到紅燈)
-      # ====================================================
-      - name: 🛠️ Run API Debugger
+      - name: 🛠️ Run SDK Debugger
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python debug_gemini.py
-        # 加上這個，即使診斷失敗也不會卡住，讓下面的主程式繼續跑 (嘗試用備用方案)
-        continue-on-error: true
-
-      # 4. 執行主程式 (記得使用我上面給你的「修復版」daily_report.py)
-      - name: Run Daily Report
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python daily_report.py
+        run: python debug_sdk.py
