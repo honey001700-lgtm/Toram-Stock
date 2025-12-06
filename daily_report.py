@@ -220,7 +220,7 @@ def main():
     if highlights:
         fields = []
         # 只顯示前 8 名，避免版面過長
-        for h in highlights[:8]: 
+        for h in highlights[:9]: 
             emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
             
             # 處理標籤顯示格式
