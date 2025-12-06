@@ -1,0 +1,12 @@
+pydirectinput
+easyocr
+pyperclip
+pygetwindow
+requests
+mss
+numpy
+opencv-python
+streamlit
+pandas
+plotly
+matplotlib
