@@ -86,7 +86,7 @@ def generate_ai_script(market_stats, highlights):
         top_movers_str += f"- {h['item']}: {h['change_pct']:+.1f}% (${h['price']:,.0f}) [{tags_str}]\n"
 
     prompt = f"""
-    角色：托蘭市場交易分析師(托蘭小姊姊)。語氣：客觀、冷靜、專業，像台灣 YouTuber。
+    角色：托蘭市場交易分析師(托蘭小姊姊)。語氣：客觀、冷靜、專業。
     數據：{date_str}，上漲{market_stats['up']}家 / 下跌{market_stats['down']}家。
     焦點物品：\n{top_movers_str}
     任務：寫一篇約 200 字的 Discord 日報。
@@ -143,7 +143,7 @@ def send_discord_webhook(embeds):
         print(f"❌ 發送失敗: {e}")
 
 # ==========================================
-# 🚀 主程式
+# 🚀 主程式 (美化排版版)
 # ==========================================
 def main():
     print("🚀 SYSTEM CHECK: 腳本開始執行...")
@@ -195,35 +195,91 @@ def main():
             })
 
     # 4. 生成 AI 報告
-    if highlights:
-        highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+    # 分類漲跌，讓 AI 參考更有序的資料 (這裡順便排序)
+    highlights.sort(key=lambda x: x['change_pct'], reverse=True)
     
     ai_script, color = generate_ai_script(market_stats, highlights)
 
-    # 5. 製作 Embeds
-    embeds = [{
+    # ==========================================
+    # 🎨 5. 製作 Embeds (美化核心區)
+    # ==========================================
+    embeds = []
+    
+    # --- 第一則：AI 分析日報 ---
+    embeds.append({
         "title": f"🎙️ 托蘭市場日報 ({now.strftime('%m/%d')})",
         "description": ai_script,
         "color": color,
         "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
-    }]
+    })
 
+    # --- 第二則：精選數據看板 (重新設計) ---
     if highlights:
-        fields = []
-        for h in highlights[:15]: 
-            emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
-            tag_display = f"\n└ {', '.join(h['tags'])}" if h['tags'] else ""
+        data_fields = []
+        
+        # 分類：漲幅榜 vs 跌幅榜
+        risers = [h for h in highlights if h['change_pct'] > 0]
+        fallers = [h for h in highlights if h['change_pct'] < 0]
+        
+        # 再次排序確保正確
+        risers.sort(key=lambda x: x['change_pct'], reverse=True)
+        fallers.sort(key=lambda x: x['change_pct']) # 負最多的排前面
+        
+        # Helper: 格式化每一行
+        # 使用全形空白或特定符號來讓排版更整齊
+        def format_line(h):
+            # 處理標籤 Icon
+            icon = ""
+            if h['tags']:
+                if "新高" in h['tags']: icon = "✨"
+                elif "新低" in h['tags']: icon = "⚠️"
+                elif any(t in h['tags'] for t in ["頭肩", "雙重"]): icon = "👀"
+            
+            # 使用 Code Block (``) 包住數字，強制對齊
+            # :+6.1f 代表: 顯示正負號，總寬度6，小數點1位
+            pct_str = f"`{h['change_pct']:+6.1f}%`"
+            price_str = f"${h['price']:,.0f}"
+            
+            return f"{pct_str} {icon} **{h['item']}** ({price_str})"
 
-            fields.append({
-                "name": f"{h['item']}",
-                "value": f"{emoji} {h['change_pct']:+.1f}% | ${h['price']:,.0f}{tag_display}",
-                "inline": True
+        # 1. 🚀 漲幅排行榜 (取前 8 名)
+        if risers:
+            r_text = "\n".join([format_line(h) for h in risers[:8]])
+            data_fields.append({
+                "name": "🚀 飆漲專區 (Top 8)",
+                "value": r_text,
+                "inline": False  # 關閉 Inline，讓它佔滿寬度，手機版才好看
+            })
+
+        # 2. 🩸 跌幅排行榜 (取前 8 名)
+        if fallers:
+            f_text = "\n".join([format_line(h) for h in fallers[:8]])
+            data_fields.append({
+                "name": "🩸 慘跌專區 (Top 8)",
+                "value": f_text,
+                "inline": False
             })
             
+        # 3. 🔍 技術型態特別關注 (如果有的話)
+        # 只抓出有「頭肩、雙重、三角」這種技術型態的物品
+        pattern_items = [h for h in highlights if any(k in (h.get('tags') or []) for k in ["頭肩", "雙重", "三角"])]
+        if pattern_items:
+            p_text = ""
+            for h in pattern_items[:5]:
+                tags_clean = ", ".join([t for t in h['tags'] if t not in ["新高", "新低"]])
+                p_text += f"🔭 **{h['item']}**: {tags_clean}\n"
+            
+            data_fields.append({
+                "name": "🔭 技術型態偵測",
+                "value": p_text,
+                "inline": False
+            })
+
         embeds.append({
-            "title": "📋 精選數據看板",
-            "color": 3447003,
-            "fields": fields
+            "title": "📊 市場數據看板",
+            "color": 3447003, # 藍色背景
+            "fields": data_fields,
+            "footer": {"text": f"統計時間: {now.strftime('%Y-%m-%d %H:%M')} | 托蘭 AI 分析師"}
         })
 
     # 6. 發送
