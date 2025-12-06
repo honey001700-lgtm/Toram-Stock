@@ -4,4 +4,6 @@ streamlit run main.py
 pip install pyinstaller
 pyinstaller --onefile toram_bot.py
 
-git push -u origin main
+git add .
+git commit -m "V_1.1"
+git push origin main
