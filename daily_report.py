@@ -106,10 +106,65 @@ def generate_ai_script(market_stats, ai_focus_items):
     return get_backup_script()
 
 # ==========================================
-# 🎵 NEW: 使用 Edge-TTS 生成加速語音
+# 🔢 NEW: 阿拉伯數字轉中文 (讓 AI 唸對價格)
+# ==========================================
+def num_to_chinese(n):
+    """把數字轉成中文，例如 3548580 -> 三百五十四萬八千五百八十"""
+    try:
+        n = int(n)
+    except:
+        return n
+        
+    if n == 0: return "零"
+    
+    digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+    units = ["", "十", "百", "千"]
+    big_units = ["", "萬", "億", "兆"]
+    
+    result = ""
+    big_unit_idx = 0
+    
+    while n > 0:
+        section = n % 10000
+        if section > 0:
+            section_str = ""
+            temp_n = section
+            unit_idx = 0
+            has_zero = False
+            
+            while temp_n > 0:
+                digit = temp_n % 10
+                if digit > 0:
+                    if has_zero: 
+                        section_str = "零" + section_str
+                        has_zero = False
+                    section_str = digits[digit] + units[unit_idx] + section_str
+                else:
+                    has_zero = True
+                
+                temp_n //= 10
+                unit_idx += 1
+            
+            # 處理一十 -> 十 (例如 15 唸 十五，不是一十五，比較自然)
+            if section_str.startswith("一十"):
+                section_str = section_str[1:]
+                
+            result = section_str + big_units[big_unit_idx] + result
+            
+        elif result: # 如果中間有 0000 的區塊 (例如 100000001)
+            if not result.startswith("零"):
+                result = "零" + result
+                
+        n //= 10000
+        big_unit_idx += 1
+        
+    return result
+
+# ==========================================
+# 🎵 使用 Edge-TTS 生成加速語音
 # ==========================================
 async def generate_voice_async(text, output_file):
-    # rate='+30%' 代表加速 30%，可以自己微調
+    # rate='+30%' 代表加速 30%
     communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
     await communicate.save(output_file)
 
@@ -121,26 +176,32 @@ def create_audio_file(text):
         tw_now = utc_now + datetime.timedelta(hours=8)
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
-        
         filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
 
         # 2. 清理文字
-        # (1) 移除粗體
+        # (1) 移除粗體、標題
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
 
-        # (2) 🔥 把 "$15,000" 變成 "15,000眾神幣"
-        # 說明：找到 $ 符號後面接著數字和逗號的組合，把 $ 拿掉，並在最後面補上 "眾神幣"
-        clean_text = re.sub(r'\$([0-9,]+)', r'\1眾神幣', clean_text)
+        # (2) 🔥 關鍵邏輯：找到價格 (如 $3,548,580)，轉換成中文
+        def replace_price(match):
+            # 取得數字部分，移除逗號
+            num_str = match.group(1).replace(",", "")
+            # 轉成中文
+            chinese_num = num_to_chinese(num_str)
+            return f"{chinese_num}眾神幣"
 
-        # (3) 移除逗號 (讓 TTS 把 15000 當成數字一萬五千，而不是唸成 一五零零零)
+        # 搜尋 $ 開頭，後面接著數字和逗號的字串，丟給 replace_price 處理
+        clean_text = re.sub(r'\$([0-9,]+)', replace_price, clean_text)
+
+        # (3) 移除其他的逗號 (避免不必要的停頓)
         clean_text = clean_text.replace(",", "")
 
         # (4) 移除 Emoji
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
-        # 3. 執行非同步生成 (Edge-TTS 必須用 asyncio)
+        # 3. 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:
@@ -164,7 +225,7 @@ def send_discord_webhook(embeds, file_path=None):
     try:
         if file_path and os.path.exists(file_path):
             with open(file_path, 'rb') as f:
-                # 使用 multipart/form-data，Discord 會自動處理顯示位置
+                # 使用 multipart/form-data
                 files = {'file': (file_path, f, 'audio/mpeg')}
                 response = requests.post(
                     DISCORD_WEBHOOK_URL, 
