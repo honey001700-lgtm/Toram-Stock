@@ -106,61 +106,6 @@ def generate_ai_script(market_stats, ai_focus_items):
     return get_backup_script()
 
 # ==========================================
-# 🔢 NEW: 阿拉伯數字轉中文 (讓 AI 唸對價格)
-# ==========================================
-def num_to_chinese(n):
-    """把數字轉成中文，例如 3548580 -> 三百五十四萬八千五百八十"""
-    try:
-        n = int(n)
-    except:
-        return n
-        
-    if n == 0: return "零"
-    
-    digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
-    units = ["", "十", "百", "千"]
-    big_units = ["", "萬", "億", "兆"]
-    
-    result = ""
-    big_unit_idx = 0
-    
-    while n > 0:
-        section = n % 10000
-        if section > 0:
-            section_str = ""
-            temp_n = section
-            unit_idx = 0
-            has_zero = False
-            
-            while temp_n > 0:
-                digit = temp_n % 10
-                if digit > 0:
-                    if has_zero: 
-                        section_str = "零" + section_str
-                        has_zero = False
-                    section_str = digits[digit] + units[unit_idx] + section_str
-                else:
-                    has_zero = True
-                
-                temp_n //= 10
-                unit_idx += 1
-            
-            # 處理一十 -> 十 (例如 15 唸 十五，不是一十五，比較自然)
-            if section_str.startswith("一十"):
-                section_str = section_str[1:]
-                
-            result = section_str + big_units[big_unit_idx] + result
-            
-        elif result: # 如果中間有 0000 的區塊 (例如 100000001)
-            if not result.startswith("零"):
-                result = "零" + result
-                
-        n //= 10000
-        big_unit_idx += 1
-        
-    return result
-
-# ==========================================
 # 🎵 使用 Edge-TTS 生成加速語音
 # ==========================================
 async def generate_voice_async(text, output_file):
@@ -183,18 +128,10 @@ def create_audio_file(text):
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
 
-        # (2) 🔥 關鍵邏輯：找到價格 (如 $3,548,580)，轉換成中文
-        def replace_price(match):
-            # 取得數字部分，移除逗號
-            num_str = match.group(1).replace(",", "")
-            # 轉成中文
-            chinese_num = num_to_chinese(num_str)
-            return f"{chinese_num}眾神幣"
+        # (2) 把 "$1,000" 變成 "1,000眾神幣" (單純位移，不轉中文)
+        clean_text = re.sub(r'\$([0-9,]+)', r'\1眾神幣', clean_text)
 
-        # 搜尋 $ 開頭，後面接著數字和逗號的字串，丟給 replace_price 處理
-        clean_text = re.sub(r'\$([0-9,]+)', replace_price, clean_text)
-
-        # (3) 移除其他的逗號 (避免不必要的停頓)
+        # (3) 移除逗號 (您指定要拿掉)
         clean_text = clean_text.replace(",", "")
 
         # (4) 移除 Emoji
