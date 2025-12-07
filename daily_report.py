@@ -141,7 +141,7 @@ def main():
     # 2. 時間設定 (強制台灣時間 UTC+8)
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
-    yesterday = tw_now - pd.Timedelta(hours=24)
+    yesterday = tw_now - pd.Timedelta(hours=25)
     
     if not pd.api.types.is_datetime64_any_dtype(df['時間']):
         df['時間'] = pd.to_datetime(df['時間'])

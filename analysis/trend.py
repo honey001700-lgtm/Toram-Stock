@@ -11,14 +11,14 @@ def analyze_trend(df):
     """
     N = min(30, len(df))
     if N < 5:
-        return {"趨勢方向": "數據不足", "多空強度": 0, "AI統計信心值": 0, "支撐/阻力附近距離": "N/A", "未來短期預測價格": "N/A", "反轉風險提示": "數據不足"}
+        return {"趨勢方向": "數據不足", "多空強度": 0, "AI統計信心值": 0, "支撐/阻力附近距離": "N/A", "未來短期預測價格": "N/A", "反轉風險提示": "數據不足", "R_squared": 0} # 修正 R_squared 預設值
 
     recent_df = df.tail(N)
     
     # 1. 線性回歸趨勢 (主要方向)
     x = np.arange(N)
     y = recent_df['單價'].values
-    slope, intercept, r_value, p_value, std_err = linregress(x, y)
+    slope, intercept, r_value, p_value_stat, std_err = linregress(x, y) # 避免 p_value 與 slope 混淆
     
     # 2. 趨勢方向判斷
     if slope > 0.05 * recent_df['單價'].mean() / N:
@@ -34,12 +34,13 @@ def analyze_trend(df):
     max_strength = recent_df['單價'].std() # 假設最大強度與波動度相關
     strength = min(100, int((strength_raw / max_strength) * 100 * 2)) if max_strength > 0 else 50
     
-    # 4. AI 統計信心值 (基於 R-squared)
+     # 4. AI 統計信心值 (基於 R-squared)
     confidence = int((r_value ** 2) * 100)
     
     # 5. 未來短期預測 (7點後，簡單線性外推)
     future_x = N + 7
-    forecast_price = p_value * future_x + intercept if confidence > 50 else recent_df['單價'].iloc[-1]
+    # 🔴 嚴重修正：將錯誤的 p_value 替換為正確的斜率 slope
+    forecast_price = slope * future_x + intercept if confidence > 50 else recent_df['單價'].iloc[-1]
     
     # 6. 反轉風險提示 (基於 RSI 概念 - 簡單用價格與 MA20 距離)
     MA20 = recent_df['單價'].rolling(window=20).mean().iloc[-1] if N >= 20 else recent_df['單價'].mean()
@@ -59,5 +60,5 @@ def analyze_trend(df):
         "支撐/阻力附近距離": "待計算", # Placeholder
         "未來短期預測價格": f"${forecast_price:,.0f}",
         "反轉風險提示": risk,
-        "R_squared": None, # 🔴 新增預設值
+        "R_squared": round(r_value ** 2, 2), # 修正並新增 R_squared
     }
