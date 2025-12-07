@@ -54,7 +54,7 @@ def generate_ai_script(market_stats, ai_focus_items):
     語氣：冷靜、熱情、專業，就像台灣的財經達人 YouTuber。
     
     【市場數據】
-    - 日期：{date_str}
+    - 日期：{date_str} (請以此日期為準)
     - 上漲 {market_stats['up']} 家 / 下跌 {market_stats['down']} 家
     - 平均漲跌幅：{market_stats['avg_change']:+.1f}%
 
@@ -62,13 +62,16 @@ def generate_ai_script(market_stats, ai_focus_items):
     {items_str}
 
     【寫作要求】
-    1. **自然流暢**：順暢介紹這 6 個物品，不要用生硬標題。
-    2. **情緒起伏**：大漲要開心恭喜，大跌或頭肩頂要語氣轉為關心提醒。
-    3. **強制格式**：
-       - 價格：**$10,000,000** (粗體+錢字號+千分位)。
-       - 漲跌：**+237.2%** (粗體+正負號+百分比)。
-    4. **特徵解讀**：順口提到技術型態代表的意義。
-    5. **結尾**：請說「我們明天見」。
+    1. **自然流暢**：請順暢地介紹這 6 個物品，**不要**使用「紅榜區」、「警示區」這種生硬的分類標題。
+    2. **情緒起伏**：
+       - 講到大漲、創新高的物品時要開心、恭喜玩家。
+       - 講到大跌、或有「頭肩頂」的物品時，語氣轉為關心、提醒風險。
+    3. **強制格式 (非常重要)**：
+       - 價格：必須寫成 **$10,000,000** (粗體 + 錢字號 + 千分位)，前後留空白。
+       - 漲跌：必須寫成 **+237.2%** (粗體 + 正負號 + 百分比)，前後留空白。
+    4. **特徵解讀**：如果物品有「頭肩頂」或「三角收斂」，請順口提到這代表什麼（例如：要注意回檔喔）。
+    5. **結尾強制指令**：
+       - 即使今天是週日，因為這是「日報」，結尾請說「我們明天見」，**絕對不要說**「下週見」。
     6. 字數約 350 字，多用Emoji。
     """
 
@@ -116,18 +119,17 @@ def create_audio_file(text):
         # 1. 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
+        
+        # 格式: [ 托蘭市場日報 (12-08 14點) ].mp3
+        # 注意：使用 - 分隔日期，避免路徑錯誤
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
-        filename = f"[ 托蘭市場日報 ({month_day} {hour}點) ].mp3"
+        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
 
-        # 2. 清理文字 (關鍵修正)
-        # (1) 移除粗體 Markdown
+        # 2. 清理文字 (移除 Emoji 與特殊符號)
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
-        # (2) 移除標題符號
         clean_text = clean_text.replace("###", "").replace("##", "")
-        # (3) 關鍵修正：移除錢字號和逗號，讓 TTS 讀出正確的中文數字 (如: $10,000 -> 10000)
-        clean_text = clean_text.replace("$", "").replace(",", "")
-        # (4) 移除 Emoji
+        # 移除 Emoji
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
@@ -155,6 +157,7 @@ def send_discord_webhook(embeds, file_path=None):
     try:
         if file_path and os.path.exists(file_path):
             with open(file_path, 'rb') as f:
+                # 使用 multipart/form-data，Discord 會自動處理顯示位置
                 files = {'file': (file_path, f, 'audio/mpeg')}
                 response = requests.post(
                     DISCORD_WEBHOOK_URL, 
