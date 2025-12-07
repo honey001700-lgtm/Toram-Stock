@@ -5,3 +5,5 @@ scipy
 plotly
 requests
 google-generativeai
+edge-tts
+openpyxl

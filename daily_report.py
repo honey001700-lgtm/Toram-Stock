@@ -6,8 +6,9 @@ import datetime
 import time
 import json
 import re
+import asyncio # NEW: 因為 edge-tts 是非同步的
+import edge_tts # NEW: 換成微軟 Edge 的語音，支援調速
 import google.generativeai as genai 
-from gtts import gTTS
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
 import logging
@@ -34,18 +35,16 @@ def generate_ai_script(market_stats, ai_focus_items):
     tw_now = utc_now + datetime.timedelta(hours=8)
     date_str = tw_now.strftime("%Y-%m-%d %A")
 
-    # 備用文案 (當 AI 掛掉時使用)
+    # 備用文案
     def get_backup_script():
         return "(AI 分析師連線忙碌中，請直接查看下方數據看板)", 0
     
     if not GEMINI_API_KEY: return get_backup_script()
 
     # --- 準備 Prompt ---
-    
-    # 將 6 個焦點物品轉成字串
     items_str = ""
     for h in ai_focus_items:
-        role = h.get('role', '重點關注') # 例如：漲幅冠軍、跌幅最重
+        role = h.get('role', '重點關注')
         tags_str = ", ".join(h['tags']) if h['tags'] else "無"
         items_str += f"- {h['item']} ({role}): 漲跌 {h['change_pct']:+.1f}%, 價格 {h['price']:,.0f}, 特徵: {tags_str}\n"
 
@@ -55,7 +54,7 @@ def generate_ai_script(market_stats, ai_focus_items):
     語氣：冷靜、熱情、專業，就像台灣的財經達人 YouTuber。
     
     【市場數據】
-    - 日期：{date_str} (請以此日期為準)
+    - 日期：{date_str}
     - 上漲 {market_stats['up']} 家 / 下跌 {market_stats['down']} 家
     - 平均漲跌幅：{market_stats['avg_change']:+.1f}%
 
@@ -63,26 +62,21 @@ def generate_ai_script(market_stats, ai_focus_items):
     {items_str}
 
     【寫作要求】
-    1. **自然流暢**：請順暢地介紹這 6 個物品，**不要**使用「紅榜區」、「警示區」這種生硬的分類標題。
-    2. **情緒起伏**：
-       - 講到大漲、創新高的物品時要開心、恭喜玩家。
-       - 講到大跌、或有「頭肩頂」的物品時，語氣轉為關心、提醒風險。
-    3. **強制格式 (非常重要)**：
-       - 價格：必須寫成 **$10,000,000** (粗體 + 錢字號 + 千分位)，前後留空白。
-       - 漲跌：必須寫成 **+237.2%** (粗體 + 正負號 + 百分比)，前後留空白。
-    4. **特徵解讀**：如果物品有「頭肩頂」或「三角收斂」，請順口提到這代表什麼（例如：要注意回檔喔）。
-    5. **結尾強制指令**：
-       - 即使今天是週日，因為這是「日報」，結尾請說「我們明天見」，**絕對不要說**「下週見」。
+    1. **自然流暢**：順暢介紹這 6 個物品，不要用生硬標題。
+    2. **情緒起伏**：大漲要開心恭喜，大跌或頭肩頂要語氣轉為關心提醒。
+    3. **強制格式**：
+       - 價格：**$10,000,000** (粗體+錢字號+千分位)。
+       - 漲跌：**+237.2%** (粗體+正負號+百分比)。
+    4. **特徵解讀**：順口提到技術型態代表的意義。
+    5. **結尾**：請說「我們明天見」。
     6. 字數約 350 字，多用Emoji。
     """
 
-    # --- 呼叫模型 (Flash 優先) ---
+    # --- 呼叫模型 ---
     target_models = []
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 優先順序：2.0 Flash -> 1.5 Flash -> 任何 Flash
         priority_list = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-001", "flash"]
         seen = set()
         for p in priority_list:
@@ -92,7 +86,6 @@ def generate_ai_script(market_stats, ai_focus_items):
                     seen.add(m)
         if not target_models: target_models = all_models
     except:
-        # 如果查詢失敗，盲猜最穩定的模型
         target_models = ["models/gemini-1.5-flash"]
 
     for model_name in target_models:
@@ -101,42 +94,40 @@ def generate_ai_script(market_stats, ai_focus_items):
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.7))
             if response.text:
-                # 漲家數 > 跌家數 = 綠色(Discord格式)，否則紅色
                 color = 5763719 if market_stats['up'] >= market_stats['down'] else 15548997
                 return response.text, color
         except Exception as e:
-            # 忽略 429 錯誤並重試，其他錯誤則印出
             if "429" not in str(e): print(f"❌ {model_name} error: {e}")
             time.sleep(1)
 
     return get_backup_script()
 
 # ==========================================
-# 🎵 NEW: 生成語音檔案功能
+# 🎵 NEW: 使用 Edge-TTS 生成加速語音
 # ==========================================
-def create_audio_file(text):
-    print("🎙️ 正在生成語音報導...")
-    try:
-        # 1. 清理文字：移除 Markdown 粗體符號 (**)，保留文字
-        # 例如: **$100** -> $100
-        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-        
-        # 2. 移除一些不適合唸出來的 Markdown 標題符號
-        clean_text = clean_text.replace("###", "").replace("##", "")
+async def generate_voice_async(text, output_file):
+    # 選擇語音：zh-TW-HsiaoChenNeural (女) 或 zh-TW-YunJheNeural (男)
+    # rate='+30%' 代表加速 30%，你可以改成 +50% 更快
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
+    await communicate.save(output_file)
 
-        # 3. 呼叫 Google TTS (語言設為台灣中文 zh-TW)
-        tts = gTTS(text=clean_text, lang='zh-tw')
+def create_audio_file(text):
+    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
+    try:
+        # 1. 清理文字
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) # 去除粗體
+        clean_text = clean_text.replace("###", "").replace("##", "")
         
-        # 4. 存檔
+        # 2. 執行非同步生成
         filename = "market_report.mp3"
-        tts.save(filename)
+        asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:
         print(f"❌ 語音生成失敗: {e}")
         return None
 
 # ==========================================
-# 🛠️ Discord 發送功能 (支援音檔)
+# 🛠️ Discord 發送功能
 # ==========================================
 def send_discord_webhook(embeds, file_path=None):
     if not DISCORD_WEBHOOK_URL:
@@ -150,20 +141,15 @@ def send_discord_webhook(embeds, file_path=None):
     }
 
     try:
-        # 如果有音檔，發送方式不同 (multipart/form-data)
         if file_path and os.path.exists(file_path):
             with open(file_path, 'rb') as f:
-                # Discord Webhook 傳檔案時，JSON 設定必須放在 'payload_json' 欄位
-                files = {
-                    'file': (file_path, f, 'audio/mpeg')
-                }
+                files = {'file': (file_path, f, 'audio/mpeg')}
                 response = requests.post(
                     DISCORD_WEBHOOK_URL, 
                     data={'payload_json': json.dumps(payload)}, 
                     files=files
                 )
         else:
-            # 沒有音檔，維持原本的 JSON 發送方式
             response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
             
         if response.status_code in [200, 204]:
@@ -184,7 +170,7 @@ def main():
     df, err = load_data(SHEET_URL)
     if df.empty: return
 
-    # 2. 時間設定 (強制台灣時間 UTC+8)
+    # 2. 時間設定
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     yesterday = tw_now - pd.Timedelta(hours=25)
@@ -231,43 +217,28 @@ def main():
         'avg_change': sum(all_changes) / len(all_changes) if all_changes else 0
     }
 
-    # --- 4. 挑選 6 位主角 (AI Focus) ---
+    # --- 4. 挑選焦點物品 ---
     ai_focus_items = []
     selected_names = set()
-
     def add_item(item_obj, role_name):
         if item_obj['item'] not in selected_names:
             item_obj['role'] = role_name
             ai_focus_items.append(item_obj)
             selected_names.add(item_obj['item'])
 
-    # (1) 👑 漲幅冠軍
     highlights.sort(key=lambda x: x['change_pct'], reverse=True)
-    if highlights and highlights[0]['change_pct'] > 0:
-        add_item(highlights[0], "漲幅冠軍")
-
-    # (2) 🥈 漲幅亞軍
-    if len(highlights) > 1 and highlights[1]['change_pct'] > 0:
-        add_item(highlights[1], "強勢副手")
-
-    # (3) 🩸 跌幅最重
-    highlights.sort(key=lambda x: x['change_pct']) # 由小到大
-    if highlights and highlights[0]['change_pct'] < 0:
-        add_item(highlights[0], "跌幅最重")
-
-    # (4) 🔥 創新高代表
+    if highlights and highlights[0]['change_pct'] > 0: add_item(highlights[0], "漲幅冠軍")
+    if len(highlights) > 1 and highlights[1]['change_pct'] > 0: add_item(highlights[1], "強勢副手")
+    highlights.sort(key=lambda x: x['change_pct']) 
+    if highlights and highlights[0]['change_pct'] < 0: add_item(highlights[0], "跌幅最重")
     high_breakers = [h for h in highlights if any("新高" in t for t in h['tags'])]
     if high_breakers:
         high_breakers.sort(key=lambda x: x['change_pct'], reverse=True)
         add_item(high_breakers[0], "創歷史新高")
-
-    # (5) 🔭 技術型態
     pattern_items = [h for h in highlights if any(k in "".join(h['tags']) for k in ["頭肩", "雙重", "三角"])]
     if pattern_items:
         pattern_items.sort(key=lambda x: len(x['tags']), reverse=True)
         add_item(pattern_items[0], "技術型態")
-
-    # (6) 👀 熱門補位 (補滿 6 個)
     highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
     for h in highlights:
         if len(ai_focus_items) >= 6: break
@@ -276,34 +247,28 @@ def main():
     # 5. 生成 AI 報告
     ai_script, color = generate_ai_script(market_stats, ai_focus_items)
 
-    # ==========================================
-    # 🎵 NEW: 這裡生成音檔 (只針對 AI 腳本)
-    # ==========================================
+    # 6. 生成音檔 (只針對 AI 腳本)
     audio_file_path = None
     if ai_script and "AI 分析師連線忙碌中" not in ai_script:
-        # 只生成 AI 報告的語音，不包含下面的數據看板
         audio_file_path = create_audio_file(ai_script)
 
-    # --- 6. 製作 Embeds ---
+    # --- 7. 製作 Embeds ---
     embeds = []
     
-    # 第一則 Embed: AI 分析日報 (附上音檔播放提示)
+    # [Embed 1] AI 日報 (移除 Footer)
     embeds.append({
         "title": f"🎙️ 托蘭市場日報 ({tw_now.strftime('%m/%d')})",
         "description": ai_script,
         "color": color,
-        "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"},
-        "footer": {"text": "💡 點擊上方播放鍵收聽 AI 語音播報"} if audio_file_path else None
+        "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
     })
 
+    # [Embed 2] 數據看板 (Footer 移到這裡)
     if highlights:
-        # 看板部分：依照波動排序，列出前 15 名
         highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
         fields = []
         for h in highlights[:15]: 
             emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
-            
-            # 處理標籤美化
             pretty_tags = []
             for tag in h.get('tags', []):
                 if "新高" in tag: pretty_tags.append("🔥 創歷史新高")
@@ -314,29 +279,25 @@ def main():
                 elif "雙重底" in tag: pretty_tags.append("🇼 W底(看漲)")
                 elif "三角" in tag: pretty_tags.append("📐 三角收斂")
                 else: pretty_tags.append(tag) 
-
-            # 標籤垂直條列
             tag_display = f"\n" + "\n".join([f"└ {t}" for t in pretty_tags]) if pretty_tags else ""
-            
             fields.append({
                 "name": f"{h['item']}", 
                 "value": f"{emoji} `{h['change_pct']:+.1f}%` | ${h['price']:,.0f}{tag_display}",
                 "inline": True
             })
             
-        # 第二則 Embed: 數據看板 (不唸出來)
         embeds.append({
             "title": "📋 精選數據看板",
             "description": "*(此區域數據不包含在語音播報中)*",
             "color": 3447003,
             "fields": fields,
-            "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
+            "footer": {"text": "👇 音檔在最下方，請點擊播放鍵收聽 AI 報導" if audio_file_path else f"統計時間: {tw_now.strftime('%H:%M')}"}
         })
 
-    # 7. 發送 (傳入音檔路徑)
+    # 8. 發送 (Discord 預設會把附件顯示在訊息的最下方)
     send_discord_webhook(embeds, file_path=audio_file_path)
 
-    # 8. 清理暫存檔
+    # 9. 清理暫存
     if audio_file_path and os.path.exists(audio_file_path):
         os.remove(audio_file_path)
         print("🧹 暫存音檔已清理")

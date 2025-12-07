@@ -20,7 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl gTTS
+          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl edge-tts
 
       - name: Run Daily Report
         env:
