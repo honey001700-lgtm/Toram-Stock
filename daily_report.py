@@ -121,7 +121,7 @@ def create_audio_file(text):
         # 注意：使用 - 分隔日期，避免路徑錯誤
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
-        filename = f"[ 托蘭市場日報 ({month_day} {hour}點) ].mp3"
+        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
 
         # 2. 清理文字 (移除 Emoji 與特殊符號)
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
