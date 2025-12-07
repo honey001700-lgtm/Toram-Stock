@@ -22,10 +22,15 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # ==========================================
-# 🧠 AI 模型挑選與執行 (Flash 優先版)
+# 🧠 AI 模型挑選與執行 (修正時間 + 強制粗體格式)
 # ==========================================
 def generate_ai_script(market_stats, highlights):
     
+    # 1. 設定時間 (強制使用台灣時間 UTC+8)
+    utc_now = datetime.datetime.utcnow()
+    tw_now = utc_now + datetime.timedelta(hours=8)
+    date_str = tw_now.strftime("%Y-%m-%d %A") # 例如: 2025-12-07 Sunday
+
     # --- 備用文案 (Plan B) ---
     def get_backup_script():
         print("🛡️ 啟用備用文案模式...")
@@ -33,32 +38,22 @@ def generate_ai_script(market_stats, highlights):
         top_item = highlights[0] if highlights else None
         highlight_text = ""
         if top_item:
-            highlight_text = f"今日焦點是 {top_item['item']}，幅度達 {top_item['change_pct']:.1f}%！"
+            # 備用文案也要符合你的格式要求
+            highlight_text = f"今日焦點是 {top_item['item']}，幅度達 {top_item['change_pct']:.1f}%，現價 **${top_item['price']:,.0f}** ！"
         return f"""(系統自動生成) 各位冒險者好！🤖\n{mood}\n本日上漲 {market_stats['up']} 家，下跌 {market_stats['down']} 家。\n{highlight_text}\n(AI 分析師連線休息中，以上為自動播報)\n祝大家打寶順利！""", 0
 
     if not GEMINI_API_KEY:
         print("⚠️ 未設定 API Key")
         return get_backup_script()
 
-    # --- 1. 篩選出所有「Flash」模型 ---
+    # --- 2. 篩選出所有「Flash」模型 ---
     target_models = []
     try:
         print("🔍 正在查詢 Google 可用模型清單...")
         genai.configure(api_key=GEMINI_API_KEY)
-        
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # 我們只想要 Flash (速度快、額度高)
-        # 優先順序：2.0 Flash Exp -> 1.5 Flash -> 任何 Flash
-        priority_list = [
-            "gemini-2.0-flash-exp", 
-            "gemini-1.5-flash", 
-            "gemini-1.5-flash-002",
-            "gemini-1.5-flash-001",
-            "flash" # 只要名字裡有 flash 都抓進來
-        ]
-
-        # 依照優先順序建立候選名單
+        priority_list = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-002", "gemini-1.5-flash-001", "flash"]
         seen = set()
         for p in priority_list:
             for m in all_models:
@@ -66,60 +61,55 @@ def generate_ai_script(market_stats, highlights):
                     target_models.append(m)
                     seen.add(m)
         
-        print(f"📋 篩選後的 Flash 模型候選: {target_models}")
-
-        if not target_models:
-            print("⚠️ 沒找到任何 Flash 模型，將嘗試所有可用模型...")
-            target_models = all_models
-
-    except Exception as e:
-        print(f"⚠️ 查詢模型失敗: {e}")
-        # 如果查詢失敗，就盲猜這幾個最穩的
+        if not target_models: target_models = all_models
+    except:
         target_models = ["models/gemini-1.5-flash", "models/gemini-1.5-flash-001"]
 
-    # --- 2. 準備提示詞 ---
-    now = datetime.datetime.now()
-    date_str = now.strftime("%Y-%m-%d %A")
+    # --- 3. 準備提示詞 (加入強制格式指令) ---
     top_movers_str = ""
     for h in highlights[:3]: 
         tags_str = ", ".join(h['tags']) if h['tags'] else "無"
-        top_movers_str += f"- {h['item']}: {h['change_pct']:+.1f}% (${h['price']:,.0f}) [{tags_str}]\n"
+        top_movers_str += f"- {h['item']}: 漲跌 {h['change_pct']:+.1f}%, 價格 {h['price']:,.0f}, 特徵: [{tags_str}]\n"
 
     prompt = f"""
-    角色：托蘭市場交易分析師(托蘭小姊姊)。語氣：客觀、冷靜、專業，像台灣 YouTuber。
-    數據：{date_str}，上漲{market_stats['up']}家 / 下跌{market_stats['down']}家。
-    焦點物品：\n{top_movers_str}
-    任務：寫一篇約 200 字的 Discord 日報。
-    結構：1.開場問候 2.盤勢多空判斷 3.重點物品點評(漲則興奮,跌則提醒) 4.結尾祝福。
-    要求：重點在於數據分析，但情緒用語也不要太少。使用 Emoji，不要太生硬。
+    【角色設定】
+    你是一位名叫「托蘭小姊姊」的虛擬寶物市場分析師。
+    語氣：活潑、熱情、專業，就像台灣的財經 YouTuber。
+    
+    【市場數據】
+    - 日期：{date_str} (請以此日期為準，不要說錯)
+    - 市場氣氛：上漲 {market_stats['up']} 家 / 下跌 {market_stats['down']} 家
+    - 重點關注物品：\n{top_movers_str}
+
+    【寫作要求】
+    1. 結構：開場問候 -> 整體盤勢 -> 重點物品點評(漲則興奮恭喜, 跌則謹慎提醒) -> 結尾祝福。
+    2. ⚠️ **強制格式要求**：
+       - 提到「價格」時，必須使用「粗體 + 錢字號 + 千分位」，且前後要留空白。
+       - 錯誤範例：價格是1000萬、價格是10,000,000
+       - 正確範例：價格來到 **$10,000,000** 
+       - 正確範例：衝上了 **$666,666** 的高價
+    3. 如果物品有「頭肩頂」或「創歷史新高」等特徵，請務必在點評時提到並解讀其意義（例如頭肩頂要注意風險）。
+    4. 字數約 250 字，多用 Emoji 讓版面生動。
     """
 
-    # --- 3. 輪詢呼叫 (失敗就換下一個) ---
+    # --- 4. 輪詢呼叫 ---
     for model_name in target_models:
         try:
             print(f"🧠 嘗試呼叫: {model_name} ...")
             model = genai.GenerativeModel(model_name)
-            
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(temperature=0.7)
-            )
+            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.7))
             
             if response.text:
                 print("✅ AI 寫作成功！")
                 color = 5763719 if market_stats['up'] >= market_stats['down'] else 15548997
                 return response.text, color
-
         except Exception as e:
-            # 判斷是否為配額不足 (429)
             if "429" in str(e) or "quota" in str(e).lower():
-                print(f"⏳ {model_name} 配額不足，切換下一個模型...")
+                print(f"⏳ {model_name} 配額不足...")
             else:
-                print(f"❌ {model_name} 執行失敗: {e}")
-            
-            time.sleep(1) # 稍微休息一下
+                print(f"❌ {model_name} 錯誤: {e}")
+            time.sleep(1)
 
-    print("❌ 所有模型嘗試皆失敗。")
     return get_backup_script()
 
 # ==========================================
