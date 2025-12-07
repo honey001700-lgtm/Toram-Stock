@@ -303,7 +303,7 @@ def main():
             
         embeds.append({
             "title": "📋 精選數據看板",
-            "description": "*(此區域數據不包含在語音播報中)*",
+            "description": "*(此區域大多數據不包含在語音播報中)*",
             "color": 3447003,
             "fields": fields,
             "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
