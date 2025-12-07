@@ -74,7 +74,7 @@ def generate_ai_script(market_stats, highlights):
     prompt = f"""
     【角色設定】
     你是一位名叫「托蘭分析師」的托蘭市場走向分析師。
-    語氣：活潑、熱情、專業，就像台灣的財經 YouTuber。
+    語氣：冷靜、熱情、專業，就像台灣的財經達人。
     
     【市場數據】
     - 日期：{date_str} (請以此日期為準，不要說錯)
@@ -89,7 +89,7 @@ def generate_ai_script(market_stats, highlights):
     3. 如果物品有「頭肩頂」或「創歷史新高」等特徵，請務必在點評時提到並解讀其意義。
     4. ⚠️ **結尾強制指令**：
        - 這是「日報」，結尾請說「明天見」。
-    5. 字數約 250 字，多用 Emoji 讓版面生動。
+    5. 字數控制在 350-400 字左右。
     """
 
     # --- 4. 輪詢呼叫 ---
@@ -358,6 +358,6 @@ def main():
         })
 
     send_discord_webhook(embeds)
-    
+
 if __name__ == "__main__":
     main()
