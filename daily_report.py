@@ -73,7 +73,7 @@ def generate_ai_script(market_stats, highlights):
 
     prompt = f"""
     【角色設定】
-    你是一位名叫「托蘭小姊姊」的虛擬寶物市場分析師。
+    你是一位名叫「托蘭分析師」的托蘭市場走向分析師。
     語氣：活潑、熱情、專業，就像台灣的財經 YouTuber。
     
     【市場數據】
