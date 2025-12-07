@@ -20,9 +20,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
-          pip install git+https://github.com/rany2/edge-tts.git
-
+          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl edge-tts
 
       - name: Run Daily Report
         env:
