@@ -6,8 +6,8 @@ import datetime
 import time
 import json
 import re
-import asyncio # NEW: 因為 edge-tts 是非同步的
-import edge_tts # NEW: 換成微軟 Edge 的語音，支援調速
+import asyncio 
+import edge_tts 
 import google.generativeai as genai 
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
@@ -106,20 +106,24 @@ def generate_ai_script(market_stats, ai_focus_items):
 # 🎵 NEW: 使用 Edge-TTS 生成加速語音
 # ==========================================
 async def generate_voice_async(text, output_file):
-    # 選擇語音：zh-TW-HsiaoChenNeural (女) 或 zh-TW-YunJheNeural (男)
-    # rate='+30%' 代表加速 30%，你可以改成 +50% 更快
+    # rate='+30%' 代表加速 30%
     communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
     await communicate.save(output_file)
 
 def create_audio_file(text):
     print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
-        # 1. 清理文字
-        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) # 去除粗體
+        # 1. 產生動態檔名 (例如: Toram_2023-10-27_14-30.mp3)
+        utc_now = datetime.datetime.utcnow()
+        tw_now = utc_now + datetime.timedelta(hours=8)
+        # 格式：Toram_年-月-日_時-分.mp3
+        filename = f"Toram_{tw_now.strftime('%Y-%m-%d_%H-%M')}.mp3"
+
+        # 2. 清理文字
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
         
-        # 2. 執行非同步生成
-        filename = "market_report.mp3"
+        # 3. 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:
@@ -247,7 +251,7 @@ def main():
     # 5. 生成 AI 報告
     ai_script, color = generate_ai_script(market_stats, ai_focus_items)
 
-    # 6. 生成音檔 (只針對 AI 腳本)
+    # 6. 生成音檔 (使用動態檔名)
     audio_file_path = None
     if ai_script and "AI 分析師連線忙碌中" not in ai_script:
         audio_file_path = create_audio_file(ai_script)
@@ -255,7 +259,7 @@ def main():
     # --- 7. 製作 Embeds ---
     embeds = []
     
-    # [Embed 1] AI 日報 (移除 Footer)
+    # [Embed 1] AI 日報
     embeds.append({
         "title": f"🎙️ 托蘭市場日報 ({tw_now.strftime('%m/%d')})",
         "description": ai_script,
@@ -263,7 +267,7 @@ def main():
         "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
     })
 
-    # [Embed 2] 數據看板 (Footer 移到這裡)
+    # [Embed 2] 數據看板
     if highlights:
         highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
         fields = []
@@ -294,7 +298,7 @@ def main():
             "footer": {"text": "👇 音檔在最下方，請點擊播放鍵收聽 AI 報導" if audio_file_path else f"統計時間: {tw_now.strftime('%H:%M')}"}
         })
 
-    # 8. 發送 (Discord 預設會把附件顯示在訊息的最下方)
+    # 8. 發送
     send_discord_webhook(embeds, file_path=audio_file_path)
 
     # 9. 清理暫存
