@@ -4,10 +4,7 @@ import requests
 import pandas as pd
 import datetime
 import time
-import json
-import re
 import google.generativeai as genai 
-from gtts import gTTS
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
 import logging
@@ -112,33 +109,9 @@ def generate_ai_script(market_stats, ai_focus_items):
     return get_backup_script()
 
 # ==========================================
-# 🎵 NEW: 生成語音檔案功能
+# 🛠️ Discord 發送功能
 # ==========================================
-def create_audio_file(text):
-    print("🎙️ 正在生成語音報導...")
-    try:
-        # 1. 清理文字：移除 Markdown 粗體符號 (**)，保留文字
-        # 例如: **$100** -> $100
-        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-        
-        # 2. 移除一些不適合唸出來的 Markdown 標題符號
-        clean_text = clean_text.replace("###", "").replace("##", "")
-
-        # 3. 呼叫 Google TTS (語言設為台灣中文 zh-TW)
-        tts = gTTS(text=clean_text, lang='zh-tw')
-        
-        # 4. 存檔
-        filename = "market_report.mp3"
-        tts.save(filename)
-        return filename
-    except Exception as e:
-        print(f"❌ 語音生成失敗: {e}")
-        return None
-
-# ==========================================
-# 🛠️ Discord 發送功能 (支援音檔)
-# ==========================================
-def send_discord_webhook(embeds, file_path=None):
+def send_discord_webhook(embeds):
     if not DISCORD_WEBHOOK_URL:
         print("❌ 未設定 DISCORD_WEBHOOK_URL")
         return
@@ -150,27 +123,8 @@ def send_discord_webhook(embeds, file_path=None):
     }
 
     try:
-        # 如果有音檔，發送方式不同 (multipart/form-data)
-        if file_path and os.path.exists(file_path):
-            with open(file_path, 'rb') as f:
-                # Discord Webhook 傳檔案時，JSON 設定必須放在 'payload_json' 欄位
-                files = {
-                    'file': (file_path, f, 'audio/mpeg')
-                }
-                response = requests.post(
-                    DISCORD_WEBHOOK_URL, 
-                    data={'payload_json': json.dumps(payload)}, 
-                    files=files
-                )
-        else:
-            # 沒有音檔，維持原本的 JSON 發送方式
-            response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
-            
-        if response.status_code in [200, 204]:
-            print("✅ Discord 通知發送成功！")
-        else:
-            print(f"❌ Discord 回傳錯誤: {response.status_code} - {response.text}")
-
+        requests.post(DISCORD_WEBHOOK_URL, json=payload)
+        print("✅ Discord 通知發送成功！")
     except Exception as e:
         print(f"❌ 發送失敗: {e}")
 
@@ -276,24 +230,13 @@ def main():
     # 5. 生成 AI 報告
     ai_script, color = generate_ai_script(market_stats, ai_focus_items)
 
-    # ==========================================
-    # 🎵 NEW: 這裡生成音檔 (只針對 AI 腳本)
-    # ==========================================
-    audio_file_path = None
-    if ai_script and "AI 分析師連線忙碌中" not in ai_script:
-        # 只生成 AI 報告的語音，不包含下面的數據看板
-        audio_file_path = create_audio_file(ai_script)
-
     # --- 6. 製作 Embeds ---
     embeds = []
-    
-    # 第一則 Embed: AI 分析日報 (附上音檔播放提示)
     embeds.append({
         "title": f"🎙️ 托蘭市場日報 ({tw_now.strftime('%m/%d')})",
         "description": ai_script,
         "color": color,
-        "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"},
-        "footer": {"text": "💡 點擊上方播放鍵收聽 AI 語音播報"} if audio_file_path else None
+        "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
     })
 
     if highlights:
@@ -324,22 +267,15 @@ def main():
                 "inline": True
             })
             
-        # 第二則 Embed: 數據看板 (不唸出來)
         embeds.append({
             "title": "📋 精選數據看板",
-            "description": "*(此區域數據不包含在語音播報中)*",
             "color": 3447003,
             "fields": fields,
             "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
         })
 
-    # 7. 發送 (傳入音檔路徑)
-    send_discord_webhook(embeds, file_path=audio_file_path)
-
-    # 8. 清理暫存檔
-    if audio_file_path and os.path.exists(audio_file_path):
-        os.remove(audio_file_path)
-        print("🧹 暫存音檔已清理")
+    # 7. 發送
+    send_discord_webhook(embeds)
 
 if __name__ == "__main__":
     main()

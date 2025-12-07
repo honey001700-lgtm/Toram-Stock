@@ -5,10 +5,10 @@ import numpy as np # 用於計算趨勢線
 import datetime
 
 # 🔴 你的 Google Sheet CSV 連結
-SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQtSvfsvYpDjQutAO9L4AV1Rq8XzZAQEAZcLZxl9JsSvxCo7X2JsaFTVdTAQwGNQRC2ySe5OPJaTzp9/pub?gid=1238885108&single=true&output=csv"
+SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQtSvfsvYpDjQutAO9L4AV1Rq8XzZAQEAZcLZxl9JsSvxCo7X2JsaFTVdTAQwGNQRC2ySe5OPJaTzp9/pub?gid=915078159&single=true&output=csv"
 
 st.set_page_config(
-    page_title="托蘭交易所行情 (Pro版)", 
+    page_title="托蘭交易所行情", 
     layout="wide", 
     page_icon="📈"
 )

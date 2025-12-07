@@ -225,13 +225,13 @@ class ToramBot:
             self.window = gw.getWindowsWithTitle(GAME_TITLE)[0]
             if not self.window.isActive: 
                 self.window.activate()
-                time.sleep(1)
+                time.sleep(0.5)
         except IndexError:
             print(f"❌ 找不到 '{GAME_TITLE}'")
             exit()
 
     # 🛠️ 修改點 1: 讓 click 支援字串(查表) 或 元組(直接座標)
-    def click(self, target, delay=0.5): 
+    def click(self, target, delay=0.2): 
         if isinstance(target, str):
             # 如果是字串，去 COORDS 查表
             rx, ry = COORDS[target]
@@ -247,7 +247,7 @@ class ToramBot:
         y = self.window.top + ry
         
         pydirectinput.moveTo(x, y)
-        time.sleep(0.05) 
+        time.sleep(0.1) 
         pydirectinput.click()
         if delay > 0: time.sleep(delay)
 
@@ -287,7 +287,7 @@ class ToramBot:
         self.click("BTN_CONFIRM_SEARCH", 0.3)
         
         # 移開滑鼠
-        self.click("MOUSE_RESET", 1.5)
+        self.click("MOUSE_RESET", 1.0)
 
     # 🛠️ 新增修改點：接收 item 參數，判斷是否為單一數量
     def get_number_from_screen(self, region_key, is_price=False):
@@ -344,11 +344,11 @@ class ToramBot:
         print(f"📍 查詢: {item['save_as']}")
         
         for _ in range(3):
-            pydirectinput.press('f'); time.sleep(0.3)
-        time.sleep(0.8) 
+            pydirectinput.press('f'); time.sleep(0.2)
+        time.sleep(0.2) 
         
-        self.click("BTN_USE_MARKET", 0.3)
-        self.click("BTN_BUY_ITEM", 0.3)
+        self.click("BTN_USE_MARKET", 0.6)
+        self.click("BTN_BUY_ITEM", 0.1)
         self.click("BTN_SORT_PRICE", 0.5)
         self.click("BTN_WORLD_MARKET", 0.5)
         self.scroll_ui()
