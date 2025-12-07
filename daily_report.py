@@ -8,7 +8,6 @@ import json
 import re
 import asyncio 
 import edge_tts 
-from gtts import gTTS
 import google.generativeai as genai 
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
