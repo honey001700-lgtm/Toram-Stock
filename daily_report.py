@@ -122,7 +122,7 @@ def create_audio_file(text):
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
         
-        filename = f"[ 托蘭市場日報 ({month_day} {hour}點) ].mp3"
+        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
 
         # 2. 清理文字
         # (1) 移除粗體
