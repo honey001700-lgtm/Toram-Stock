@@ -8,6 +8,7 @@ import json
 import re
 import asyncio 
 import edge_tts 
+from gtts import gTTS
 import google.generativeai as genai 
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
@@ -109,29 +110,38 @@ def generate_ai_script(market_stats, ai_focus_items):
 # 🎵 NEW: 使用 Edge-TTS 生成加速語音
 # ==========================================
 async def generate_voice_async(text, output_file):
-    # rate='+30%' 代表加速 30%
+    # rate='+30%' 代表加速 30%，可以自己微調
     communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
     await communicate.save(output_file)
 
 def create_audio_file(text):
-    print("🎙️ 正在生成語音報導 (gTTS 穩定版)...")
+    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
         # 1. 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
-        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
         
+        filename = f"[ 托蘭市場日報 ({month_day} {hour}點) ].mp3"
+
+        # 2. 清理文字
+        # (1) 移除粗體
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
 
+        # (2) 🔥 把 "$15,000" 變成 "15,000眾神幣"
+        # 說明：找到 $ 符號後面接著數字和逗號的組合，把 $ 拿掉，並在最後面補上 "眾神幣"
         clean_text = re.sub(r'\$([0-9,]+)', r'\1眾神幣', clean_text)
+
+        # (3) 移除逗號 (讓 TTS 把 15000 當成數字一萬五千，而不是唸成 一五零零零)
         clean_text = clean_text.replace(",", "")
 
+        # (4) 移除 Emoji
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
-        # 3. 執行非同步生成
+        
+        # 3. 執行非同步生成 (Edge-TTS 必須用 asyncio)
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:
