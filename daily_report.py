@@ -133,7 +133,88 @@ def send_discord_webhook(embeds):
         print(f"❌ 發送失敗: {e}")
 
 # ==========================================
-# 🚀 主程式 (修正時區 UTC+8)
+# 🧠 AI 模型 (6人版 - 自然聊天風格)
+# ==========================================
+def generate_ai_script(market_stats, ai_focus_items):
+    
+    # 1. 時間設定 (台灣時間)
+    utc_now = datetime.datetime.utcnow()
+    tw_now = utc_now + datetime.timedelta(hours=8)
+    date_str = tw_now.strftime("%Y-%m-%d %A")
+
+    # 備用文案
+    def get_backup_script():
+        return "(AI 分析師連線忙碌中，請直接查看下方數據看板)", 0
+    
+    if not GEMINI_API_KEY: return get_backup_script()
+
+    # --- 準備提示詞 ---
+    
+    # 簡單的物品清單字串
+    items_str = ""
+    for h in ai_focus_items:
+        role = h.get('role', '重點關注') # 例如：漲幅冠軍、跌幅最重
+        tags_str = ", ".join(h['tags']) if h['tags'] else "無"
+        items_str += f"- {h['item']} ({role}): 漲跌 {h['change_pct']:+.1f}%, 價格 {h['price']:,.0f}, 特徵: {tags_str}\n"
+
+    prompt = f"""
+    【角色設定】
+    你是一位名叫「托蘭小姊姊」的虛擬寶物市場分析師。
+    語氣：活潑、熱情、專業，就像台灣的財經 YouTuber 在跟觀眾直播聊天。
+    
+    【市場數據】
+    - 日期：{date_str} (請以此日期為準)
+    - 上漲 {market_stats['up']} 家 / 下跌 {market_stats['down']} 家
+    - 平均漲跌幅：{market_stats['avg_change']:+.1f}%
+
+    【今日 6 大焦點物品】
+    {items_str}
+
+    【寫作要求】
+    1. **自然流暢**：請像原本那樣，順暢地介紹這 6 個物品，**不要**使用「紅榜區」、「警示區」這種生硬的分類標題。就像你在跟朋友講今天發生了什麼大新聞一樣。
+    2. **情緒起伏**：
+       - 講到大漲、創新高的物品時要興奮、恭喜玩家。
+       - 講到大跌、或有「頭肩頂」的物品時，語氣轉為關心、提醒風險。
+    3. **強制格式 (非常重要)**：
+       - 價格： **$10,000,000** (粗體+錢號+千分位)。
+       - 漲跌： **+237.2%** (粗體+正負號+百分比)。
+    4. **特徵解讀**：如果物品有「頭肩頂」或「三角收斂」，請順口提到這代表什麼（例如：要注意回檔喔）。
+    5. **結尾**：強制說「我們明天見」。
+    6. 字數約 350 字，多用 Emoji。
+    """
+
+    # --- 呼叫模型 ---
+    target_models = []
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        priority_list = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-001", "flash"]
+        seen = set()
+        for p in priority_list:
+            for m in all_models:
+                if p in m and m not in seen:
+                    target_models.append(m)
+                    seen.add(m)
+        if not target_models: target_models = all_models
+    except:
+        target_models = ["models/gemini-1.5-flash"]
+
+    for model_name in target_models:
+        try:
+            print(f"🧠 嘗試呼叫: {model_name} ...")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt, generation_config=genai.types.GenerationConfig(temperature=0.7))
+            if response.text:
+                color = 5763719 if market_stats['up'] >= market_stats['down'] else 15548997
+                return response.text, color
+        except Exception as e:
+            if "429" not in str(e): print(f"❌ {model_name} error: {e}")
+            time.sleep(1)
+
+    return get_backup_script()
+
+# ==========================================
+# 🚀 主程式 (選出 6 強 + 傳給 AI)
 # ==========================================
 def main():
     print("🚀 SYSTEM CHECK: 腳本開始執行...")
@@ -142,70 +223,100 @@ def main():
     df, err = load_data(SHEET_URL)
     if df.empty: return
 
-    # 2. 設定時間 (強制使用台灣時間 UTC+8)
-    # GitHub Server 是 UTC，所以我們要 +8 小時
+    # 強制台灣時間 UTC+8
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
-    
-    print(f"🕒 台灣時間: {tw_now.strftime('%Y-%m-%d %H:%M')}")
-
-    # 統計範圍：台灣時間過去 24 小時
     yesterday = tw_now - pd.Timedelta(hours=24)
     
-    # 確保資料表的時間欄位格式正確
     if not pd.api.types.is_datetime64_any_dtype(df['時間']):
         df['時間'] = pd.to_datetime(df['時間'])
 
-    # 篩選資料 (這裡要注意：如果你的 Google Sheet 記錄的是台灣時間，這樣比對才完全正確)
     recent_df = df[df['時間'] >= yesterday]
     active_items = recent_df['物品'].unique().tolist()
     
-    print(f"🔍 分析範圍: {yesterday.strftime('%m/%d %H:%M')} ~ {tw_now.strftime('%m/%d %H:%M')}")
-    
+    # --- 數據收集 ---
+    all_changes = [] 
     highlights = []
-    market_stats = {'up': 0, 'down': 0, 'total': 0}
-
-    # 3. 分析物品
+    
     for item in active_items:
         item_df = filter_and_prepare_data(df, item)
         if len(item_df) < 5: continue 
 
-        latest_price = item_df.iloc[-1]['單價']
+        latest = item_df.iloc[-1]['單價']
         try:
-            prev_price = item_df[item_df['時間'] <= yesterday].iloc[-1]['單價']
-        except IndexError:
-            prev_price = item_df.iloc[0]['單價']
+            prev = item_df[item_df['時間'] <= yesterday].iloc[-1]['單價']
+        except:
+            prev = item_df.iloc[0]['單價']
             
-        change_pct = ((latest_price - prev_price) / prev_price) * 100 if prev_price else 0
-        
-        market_stats['total'] += 1
-        if change_pct > 0: market_stats['up'] += 1
-        elif change_pct < 0: market_stats['down'] += 1
+        change = ((latest - prev) / prev) * 100 if prev else 0
+        all_changes.append(change)
 
         patterns = detect_patterns(item_df)
         events = detect_events(item_df)
         tags = [p['type'] for p in patterns if any(k in p['type'] for k in ["頭肩", "雙重", "三角"])]
         tags += [e['type'] for e in events if "新高" in e['type'] or "新低" in e['type']]
 
-        if abs(change_pct) >= 10 or tags:
+        if abs(change) >= 10 or tags:
             highlights.append({
                 "item": item,
-                "price": latest_price,
-                "change_pct": change_pct,
+                "price": latest,
+                "change_pct": change,
                 "tags": tags
             })
 
-    # 4. 生成 AI 報告
-    highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
-    
-    ai_script, color = generate_ai_script(market_stats, highlights)
+    market_stats = {
+        'up': sum(1 for x in all_changes if x > 0),
+        'down': sum(1 for x in all_changes if x < 0),
+        'avg_change': sum(all_changes) / len(all_changes) if all_changes else 0
+    }
 
-    # ==========================================
-    # 🎨 5. 製作 Embeds
-    # ==========================================
+    # --- 🌟 挑選 6 位主角 (AI Focus) ---
+    ai_focus_items = []
+    selected_names = set()
+
+    def add_item(item_obj, role_name):
+        if item_obj['item'] not in selected_names:
+            item_obj['role'] = role_name
+            ai_focus_items.append(item_obj)
+            selected_names.add(item_obj['item'])
+
+    # 1. 👑 漲幅冠軍
+    highlights.sort(key=lambda x: x['change_pct'], reverse=True)
+    if highlights and highlights[0]['change_pct'] > 0:
+        add_item(highlights[0], "漲幅冠軍")
+
+    # 2. 🥈 漲幅亞軍
+    if len(highlights) > 1 and highlights[1]['change_pct'] > 0:
+        add_item(highlights[1], "強勢副手")
+
+    # 3. 🩸 跌幅最重
+    highlights.sort(key=lambda x: x['change_pct']) # 由小到大
+    if highlights and highlights[0]['change_pct'] < 0:
+        add_item(highlights[0], "跌幅最重")
+
+    # 4. 🔥 創新高代表
+    high_breakers = [h for h in highlights if any("新高" in t for t in h['tags'])]
+    if high_breakers:
+        high_breakers.sort(key=lambda x: x['change_pct'], reverse=True)
+        add_item(high_breakers[0], "創歷史新高")
+
+    # 5. 🔭 技術型態
+    pattern_items = [h for h in highlights if any(k in "".join(h['tags']) for k in ["頭肩", "雙重", "三角"])]
+    if pattern_items:
+        pattern_items.sort(key=lambda x: len(x['tags']), reverse=True)
+        add_item(pattern_items[0], "技術型態")
+
+    # 6. 👀 熱門補位 (補滿 6 個)
+    highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+    for h in highlights:
+        if len(ai_focus_items) >= 6: break
+        add_item(h, "重點關注")
+
+    # 生成 AI 報告
+    ai_script, color = generate_ai_script(market_stats, ai_focus_items)
+
+    # --- 製作 Embeds ---
     embeds = []
-    
-    # 注意這裡改用 tw_now
     embeds.append({
         "title": f"🎙️ 托蘭市場日報 ({tw_now.strftime('%m/%d')})",
         "description": ai_script,
@@ -214,13 +325,14 @@ def main():
     })
 
     if highlights:
+        # 看板部分：列出前 15 名
+        highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
         fields = []
         for h in highlights[:15]: 
             emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
             
             pretty_tags = []
-            raw_tags = h.get('tags', [])
-            for tag in raw_tags:
+            for tag in h.get('tags', []):
                 if "新高" in tag: pretty_tags.append("🔥 創歷史新高")
                 elif "新低" in tag: pretty_tags.append("🧊 創歷史新低")
                 elif "頭肩頂" in tag: pretty_tags.append("👤 頭肩頂(看跌)")
@@ -230,11 +342,7 @@ def main():
                 elif "三角" in tag: pretty_tags.append("📐 三角收斂")
                 else: pretty_tags.append(tag) 
 
-            if pretty_tags:
-                tag_lines = "\n".join([f"└ {t}" for t in pretty_tags])
-                tag_display = f"\n{tag_lines}"
-            else:
-                tag_display = ""
+            tag_display = f"\n" + "\n".join([f"└ {t}" for t in pretty_tags]) if pretty_tags else ""
             
             fields.append({
                 "name": f"{h['item']}", 
@@ -246,12 +354,10 @@ def main():
             "title": "📋 精選數據看板",
             "color": 3447003,
             "fields": fields,
-            # 這裡也改用 tw_now
             "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
         })
 
-    # 6. 發送
     send_discord_webhook(embeds)
-
+    
 if __name__ == "__main__":
     main()
