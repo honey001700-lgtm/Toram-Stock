@@ -119,17 +119,18 @@ def create_audio_file(text):
         # 1. 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
-        
-        # 格式: [ 托蘭市場日報 (12-08 14點) ].mp3
-        # 注意：使用 - 分隔日期，避免路徑錯誤
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
-        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
+        filename = f"[ 托蘭市場日報 ({month_day} {hour}點) ].mp3"
 
-        # 2. 清理文字 (移除 Emoji 與特殊符號)
+        # 2. 清理文字 (關鍵修正)
+        # (1) 移除粗體 Markdown
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
+        # (2) 移除標題符號
         clean_text = clean_text.replace("###", "").replace("##", "")
-        # 移除 Emoji
+        # (3) 關鍵修正：移除錢字號和逗號，讓 TTS 讀出正確的中文數字 (如: $10,000 -> 10000)
+        clean_text = clean_text.replace("$", "").replace(",", "")
+        # (4) 移除 Emoji
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
