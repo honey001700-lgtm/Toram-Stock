@@ -114,26 +114,23 @@ async def generate_voice_async(text, output_file):
     await communicate.save(output_file)
 
 def create_audio_file(text):
-    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
+    print("🎙️ 正在生成語音報導 (gTTS 穩定版)...")
     try:
         # 1. 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
-        filename = f"[ 托蘭市場日報 ({month_day} {hour}點) ].mp3"
-
-        # 2. 清理文字 (關鍵修正)
-        # (1) 移除粗體 Markdown
+        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
+        
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
-        # (2) 移除標題符號
         clean_text = clean_text.replace("###", "").replace("##", "")
-        # (3) 關鍵修正：移除錢字號和逗號，讓 TTS 讀出正確的中文數字 (如: $10,000 -> 10000)
-        clean_text = clean_text.replace("$", "").replace(",", "")
-        # (4) 移除 Emoji
+
+        clean_text = re.sub(r'\$([0-9,]+)', r'\1眾神幣', clean_text)
+        clean_text = clean_text.replace(",", "")
+
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
-        
         # 3. 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
