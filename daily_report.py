@@ -113,15 +113,22 @@ async def generate_voice_async(text, output_file):
 def create_audio_file(text):
     print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
-        # 1. 產生動態檔名 (例如: Toram_2023-10-27_14-30.mp3)
+        # 1. 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
-        # 格式：Toram_年-月-日_時-分.mp3
-        filename = f"Toram_{tw_now.strftime('%Y-%m-%d_%H-%M')}.mp3"
+        
+        # 格式: [ 托蘭市場日報 (12-08 14點) ].mp3
+        # 注意：使用 - 分隔日期，避免路徑錯誤
+        month_day = tw_now.strftime('%m-%d')
+        hour = tw_now.strftime('%H')
+        filename = f"[ 托蘭市場日報 ({month_day} {hour}點) ].mp3"
 
-        # 2. 清理文字
+        # 2. 清理文字 (移除 Emoji 與特殊符號)
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
+        # 移除 Emoji
+        clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
+        clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
         # 3. 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
@@ -147,6 +154,7 @@ def send_discord_webhook(embeds, file_path=None):
     try:
         if file_path and os.path.exists(file_path):
             with open(file_path, 'rb') as f:
+                # 使用 multipart/form-data，Discord 會自動處理顯示位置
                 files = {'file': (file_path, f, 'audio/mpeg')}
                 response = requests.post(
                     DISCORD_WEBHOOK_URL, 
@@ -251,7 +259,7 @@ def main():
     # 5. 生成 AI 報告
     ai_script, color = generate_ai_script(market_stats, ai_focus_items)
 
-    # 6. 生成音檔 (使用動態檔名)
+    # 6. 生成音檔 (只針對 AI 腳本)
     audio_file_path = None
     if ai_script and "AI 分析師連線忙碌中" not in ai_script:
         audio_file_path = create_audio_file(ai_script)
@@ -295,10 +303,10 @@ def main():
             "description": "*(此區域數據不包含在語音播報中)*",
             "color": 3447003,
             "fields": fields,
-            "footer": {"text": "👇 音檔在最下方，請點擊播放鍵收聽 AI 報導" if audio_file_path else f"統計時間: {tw_now.strftime('%H:%M')}"}
+            "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
         })
 
-    # 8. 發送
+    # 8. 發送 (Discord 處理順序)
     send_discord_webhook(embeds, file_path=audio_file_path)
 
     # 9. 清理暫存
