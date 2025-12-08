@@ -16,14 +16,12 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11' # 💡 修改 1: 升級到 3.11 解決 importlib 錯誤
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # 💡 修改 2: 明確指定 edge-tts 版本 >= 6.1.9 (使用 PyPI 正式版比 git 穩定)
-          pip install "edge-tts>=6.1.9"
-          # 安裝其他依賴 (移除不必要的 gTTS，因已使用 edge-tts)
+          pip install --upgrade edge-tts
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
 
       - name: Run Daily Report

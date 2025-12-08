@@ -157,46 +157,101 @@ def num_to_chinese(num_str):
     return result
 
 # 2. 非同步語音生成函式 (這是您報錯說缺少的部分)
-async def generate_voice_async(text, output_file):
-    # rate='+30%' 代表加速 30%
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
-    await communicate.save(output_file)
+# ==========================================
+# 🎵 使用 Edge-TTS 生成 (單一人聲 + 深度診斷版)
+# ==========================================
 
-# 3. 建立音檔主函式
-def create_audio_file(text):
-    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
+async def generate_voice_diagnostic(text, output_file):
+    # 【設定】只使用這一個聲音，絕不切換
+    TARGET_VOICE = "zh-TW-HsiaoYuNeural" 
+    
+    print(f"🔍 [診斷模式] 準備使用語音: {TARGET_VOICE}")
+    print(f"📊 [診斷模式] 文字長度: {len(text)} 字")
+
     try:
-        # (1) 產生動態檔名
-        utc_now = datetime.datetime.utcnow()
-        tw_now = utc_now + datetime.timedelta(hours=8)
-        month_day = tw_now.strftime('%m-%d')
-        hour = tw_now.strftime('%H')
-        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
-
-        # (2) 清理文字
-        # 移除粗體、標題
-        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
-        clean_text = clean_text.replace("###", "").replace("##", "")
-
-        # 【核心修改】將 "$25,555,555" 轉成 "二千五百...眾神幣"
-        clean_text = re.sub(
-            r'\$([0-9,]+)', 
-            lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
-            clean_text
-        )
-
-        # 移除逗號
-        clean_text = clean_text.replace(",", "")
-
-        # 移除 Emoji
-        clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
-        clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
+        # 建立連線物件
+        communicate = edge_tts.Communicate(text, TARGET_VOICE, rate="+30%")
         
-        # (3) 執行非同步生成
-        asyncio.run(generate_voice_async(clean_text, filename))
-        return filename
+        # 嘗試生成
+        await communicate.save(output_file)
+        
+        # 檢查結果
+        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+            print(f"✅ 語音生成成功！檔案大小: {os.path.getsize(output_file)} bytes")
+            return True
+        else:
+            print("❌ 生成失敗：檔案雖然沒有報錯，但產出的檔案是空的 (0 bytes)。")
+            print("👉 可能原因：傳入的文字含有微軟無法處理的字元，或被伺服器靜默拒絕。")
+            return False
+
     except Exception as e:
-        print(f"❌ 語音生成失敗: {e}")
+        error_msg = str(e)
+        print("\n" + "="*40)
+        print("🛑 語音生成被「卡住」了！詳細原因分析：")
+        print("="*40)
+        
+        # --- 針對不同錯誤代碼進行分析 ---
+        
+        if "401" in error_msg or "Unauthorized" in error_msg:
+            print("💀 錯誤類型：【401 驗證失敗 (Unauthorized)】")
+            print("👉 原因：您的 edge-tts 套件版本過舊，微軟的金鑰已更換。")
+            print("🔧 解法：必須在 requirements 或 actions 裡使用 'git+https://github.com/rany2/edge-tts.git@master'")
+            
+        elif "No audio was received" in error_msg:
+            print("🔇 錯誤類型：【無音訊回傳 (No Audio Received)】")
+            print("👉 原因：")
+            print("   1. 微軟伺服器主動切斷連線 (可能是 IP 頻率過高)。")
+            print("   2. 該語音模型暫時維修中。")
+            print("   3. 文字格式有問題 (例如全都是符號)。")
+            
+        elif "400" in error_msg or "BadRequest" in error_msg:
+            print("⚠️ 錯誤類型：【400 請求錯誤 (Bad Request)】")
+            print("👉 原因：傳送的文字格式錯誤，SSML 標籤不對，或者含有非法字元。")
+            
+        elif "Connection" in error_msg or "socket" in error_msg:
+            print("🔌 錯誤類型：【連線失敗 (Connection Error)】")
+            print("👉 原因：網路不穩，無法連上微軟 Edge 伺服器 (wss://speech.platform.bing.com)。")
+            
+        else:
+            print(f"❓ 未知錯誤類型：{error_msg}")
+            
+        print("="*40 + "\n")
+        return False
+
+def create_audio_file(text):
+    print("🎙️ 正在生成語音報導 (嚴格模式)...")
+    
+    # 1. 檢查文字內容
+    if not text or not text.strip():
+        print("❌ 卡住原因：輸入的文字是空的 (Empty String)。")
+        return None
+
+    # 2. 清理文字
+    # 這裡只做最基本的清理，保留大部分內容以便測試
+    clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
+    clean_text = clean_text.replace("###", "").replace("##", "").replace("`", "")
+    clean_text = re.sub(r'\$([0-9,]+)', lambda m: f"{num_to_chinese(m.group(1))}眾神幣", clean_text)
+    clean_text = clean_text.replace(",", "")
+    # 移除 Emoji (這通常是卡住的主因之一)
+    clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
+    clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
+
+    if not clean_text.strip():
+        print("❌ 卡住原因：文字清理後變成了空白 (可能是原文全都是 Emoji 或特殊符號)。")
+        return None
+
+    # 3. 執行生成 (包含詳細診斷)
+    utc_now = datetime.datetime.utcnow()
+    tw_now = utc_now + datetime.timedelta(hours=8)
+    filename = f"托蘭市場日報 ({tw_now.strftime('%m-%d %H')}).mp3"
+
+    success = asyncio.run(generate_voice_diagnostic(clean_text, filename))
+    
+    if success:
+        return filename
+    else:
+        # 失敗時直接回傳 None，不使用任何備用方案
+        print("❌ 因語音生成失敗，本次日報將不包含音檔。")
         return None
 
 # ==========================================
