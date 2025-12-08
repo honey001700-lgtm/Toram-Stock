@@ -9,8 +9,6 @@ import re
 import asyncio 
 import edge_tts 
 import google.generativeai as genai 
-import subprocess
-import sys
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
 import logging
@@ -108,117 +106,40 @@ def generate_ai_script(market_stats, ai_focus_items):
     return get_backup_script()
 
 # ==========================================
-# 🎵 使用 Edge-TTS 生成加速語音 (完整修正版)
+# 🎵 NEW: 使用 Edge-TTS 生成加速語音
 # ==========================================
+async def generate_voice_async(text, output_file):
+    # rate='+30%' 代表加速 30%
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
+    await communicate.save(output_file)
 
-# 1. 數字轉中文輔助函式 (解決 TTS 亂念數字問題)
-def num_to_chinese(num_str):
-    """
-    將 "25,555,555" 這樣的字串轉換為 "二千五百五十五萬五千五百五十五"
-    """
-    try:
-        n = int(num_str.replace(",", ""))
-    except:
-        return num_str
-        
-    if n == 0: return "零"
-
-    units = ['', '萬', '億']
-    nums = '零一二三四五六七八九'
-    
-    def _block_to_chinese(num):
-        s = ""
-        if num >= 1000:
-            s += nums[num // 1000] + "千"
-            num %= 1000
-            if num < 100: s += "零"
-        if num >= 100:
-            s += nums[num // 100] + "百"
-            num %= 100
-            if num < 10 and num > 0: s += "零"
-        if num >= 10:
-            s += nums[num // 10] + "十"
-            num %= 10
-        if num > 0:
-            s += nums[num]
-        return s.strip("零")
-
-    result = ""
-    unit_idx = 0
-    while n > 0:
-        block = n % 10000
-        if block > 0:
-            block_str = _block_to_chinese(block)
-            result = block_str + units[unit_idx] + result
-        n //= 10000
-        unit_idx += 1
-    
-    if result.startswith("一十"):
-        result = result[1:]
-        
-    return result
-
-# 2. 非同步語音生成函式 (這是您報錯說缺少的部分)
 def create_audio_file(text):
-    print("🎙️ 啟動語音生成 (CLI Mode + 加速30%)...")
-    
-    if not text or not text.strip():
-        print("❌ 錯誤：文字為空")
-        return None
-
-    # 1. 清理文字
-    clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
-    clean_text = clean_text.replace("###", "").replace("##", "").replace("`", "")
-    clean_text = re.sub(r'\$([0-9,]+)', lambda m: f"{num_to_chinese(m.group(1))}眾神幣", clean_text)
-    clean_text = clean_text.replace(",", "")
-    clean_text = re.sub(r'[^\w\s\u4e00-\u9fa5,.:;!?，。：；！？\(\)（）]', '', clean_text)
-    
-    if not clean_text.strip(): return None
-
-    # 2. 準備檔案
-    utc_now = datetime.datetime.utcnow()
-    tw_now = utc_now + datetime.timedelta(hours=8)
-    filename = f"托蘭市場日報 ({tw_now.strftime('%m-%d %H')}).mp3"
-    
-    temp_txt_path = "temp_tts_input.txt"
-    with open(temp_txt_path, "w", encoding="utf-8") as f:
-        f.write(clean_text)
-
-    # 3. 執行命令 (加入 --rate +30%)
-    cmd = [
-        sys.executable, "-m", "edge_tts",
-        "--voice", "zh-TW-HsiaoYuNeural",
-        "--rate", "+30%",  # 👈 這裡加入了加速指令
-        "--file", temp_txt_path,
-        "--write-media", filename
-    ]
-
-    print(f"🔥 [強制加速] 鎖定曉雨，語速 +30%...")
-    
+    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
-        result = subprocess.run(
-            cmd, 
-            capture_output=True, 
-            text=True, 
-            check=True,
-            timeout=60
-        )
+        # 1. 產生動態檔名
+        utc_now = datetime.datetime.utcnow()
+        tw_now = utc_now + datetime.timedelta(hours=8)
         
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            print(f"✅ 生成成功！音檔已加速。")
-            if os.path.exists(temp_txt_path): os.remove(temp_txt_path)
-            return filename
-        else:
-            print("❌ 命令執行完成但無檔案。")
-            return None
+        # 格式: [ 托蘭市場日報 (12-08 14點) ].mp3
+        # 注意：使用 - 分隔日期，避免路徑錯誤
+        month_day = tw_now.strftime('%m-%d')
+        hour = tw_now.strftime('%H')
+        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
 
-    except subprocess.CalledProcessError as e:
-        print(f"🛑 錯誤: {e.stderr}")
-        return None
+        # 2. 清理文字 (移除 Emoji 與特殊符號)
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
+        clean_text = clean_text.replace("###", "").replace("##", "")
+        # 移除 Emoji
+        clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
+        clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
+        
+        # 3. 執行非同步生成
+        asyncio.run(generate_voice_async(clean_text, filename))
+        return filename
     except Exception as e:
-        print(f"❌ 系統錯誤: {e}")
+        print(f"❌ 語音生成失敗: {e}")
         return None
-    
+
 # ==========================================
 # 🛠️ Discord 發送功能
 # ==========================================
@@ -236,7 +157,7 @@ def send_discord_webhook(embeds, file_path=None):
     try:
         if file_path and os.path.exists(file_path):
             with open(file_path, 'rb') as f:
-                # 使用 multipart/form-data
+                # 使用 multipart/form-data，Discord 會自動處理顯示位置
                 files = {'file': (file_path, f, 'audio/mpeg')}
                 response = requests.post(
                     DISCORD_WEBHOOK_URL, 
@@ -382,7 +303,7 @@ def main():
             
         embeds.append({
             "title": "📋 精選數據看板",
-            "description": "*(此區域數據不包含在語音播報中)*",
+            "description": "*(此區域大多數據不包含在語音播報中)*",
             "color": 3447003,
             "fields": fields,
             "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
