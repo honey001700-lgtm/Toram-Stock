@@ -2,7 +2,7 @@ name: Toram Daily Report
 
 on:
   schedule:
-    - cron: '40 13 * * *' # 每天台灣時間 21:40
+    - cron: '40 13 * * *' # UTC 13:40 = 台灣時間 21:40
   workflow_dispatch:
 
 jobs:
@@ -16,13 +16,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.11' # 💡 修改 1: 升級到 3.11 解決 importlib 錯誤
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl gTTS
-          pip install git+https://github.com/rany2/edge-tts.git
+          # 💡 修改 2: 明確指定 edge-tts 版本 >= 6.1.9 (使用 PyPI 正式版比 git 穩定)
+          pip install "edge-tts>=6.1.9"
+          # 安裝其他依賴 (移除不必要的 gTTS，因已使用 edge-tts)
+          pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
 
       - name: Run Daily Report
         env:
