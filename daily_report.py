@@ -109,31 +109,44 @@ def generate_ai_script(market_stats, ai_focus_items):
 # 🎵 NEW: 使用 Edge-TTS 生成加速語音
 # ==========================================
 async def generate_voice_async(text, output_file):
-    # rate='+30%' 代表加速 30%
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
-    await communicate.save(output_file)
+    VOICE = "zh-TW-HsiaoChenNeural"
+    print(f"🎙️ 正在嘗試召喚: {VOICE}")
+    
+    # 嘗試 1: 原本設定 (加速 +30%)
+    try:
+        communicate = edge_tts.Communicate(text, VOICE, rate="+30%")
+        await communicate.save(output_file)
+        return
+    except Exception as e:
+        print(f"⚠️ {VOICE} 加速模式失敗 ({e})，嘗試原速模式...")
+
+    # 嘗試 2: 原速 (移除 rate 參數，有時候參數會導致伺服器拒絕)
+    try:
+        communicate = edge_tts.Communicate(text, VOICE) # 不加 rate
+        await communicate.save(output_file)
+    except Exception as e:
+        # 如果還是失敗，拋出錯誤
+        raise Exception(f"無法使用 {VOICE}，可能是 IP 被微軟封鎖或語音暫時下架。錯誤: {e}")
 
 def create_audio_file(text):
-    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
+    print("🎙️ 正在生成語音報導...")
     try:
-        # 1. 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
-        
-        # 格式: [ 托蘭市場日報 (12-08 14點) ].mp3
-        # 注意：使用 - 分隔日期，避免路徑錯誤
-        month_day = tw_now.strftime('%m-%d')
-        hour = tw_now.strftime('%H')
-        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
+        filename = f"托蘭市場日報_{tw_now.strftime('%m%d_%H')}.mp3" # 檔名改簡單點，避免路徑錯
 
-        # 2. 清理文字 (移除 Emoji 與特殊符號)
-        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
-        clean_text = clean_text.replace("###", "").replace("##", "")
-        # 移除 Emoji
-        clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
-        clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
+        # === 🔥 超級強力清洗 (為了救回曉臻) ===
+        # 1. 移除 markdown
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+        clean_text = clean_text.replace("###", "").replace("##", "").replace("- ", " ")
         
-        # 3. 執行非同步生成
+        # 2. 移除所有非中英數與基本標點的符號 (殺掉所有 Emoji 與數學符號)
+        # 這是為了避免特殊字元導致 edge-tts 崩潰
+        clean_text = re.sub(r'[^\w\s\u4e00-\u9fa5,.:;!?()$%\+\-]', '', clean_text)
+        
+        # 3. 確保不要太長 (雖然通常沒事，但安全起見)
+        clean_text = clean_text[:2000] 
+
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:

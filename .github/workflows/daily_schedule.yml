@@ -23,6 +23,11 @@ jobs:
           pip install --upgrade pip
           pip install --upgrade edge-tts
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
+          
+      - name: Check specifically for HsiaoChen
+        run: |
+          echo "正在檢查微軟伺服器上的台灣語音列表..."
+          edge-tts --list-voices | grep "zh-TW"
 
       - name: Run Daily Report
         env:
