@@ -158,82 +158,86 @@ def num_to_chinese(num_str):
 
 # 2. 非同步語音生成函式 (這是您報錯說缺少的部分)
 # ==========================================
-# 🎵 使用 Edge-TTS 生成 (單一人聲 + 深度診斷版)
+# 🎵 使用 Edge-TTS 生成 (系統命令強制執行版)
 # ==========================================
-
-# ==========================================
-# 🎵 使用 Edge-TTS 生成 (死纏爛打版 - 專攻曉雨)
-# ==========================================
-
-async def generate_voice_robust(text, output_file):
-    TARGET_VOICE = "zh-TW-HsiaoYuNeural"
-    MAX_RETRIES = 3
-    
-    print(f"🔥 [死纏爛打模式] 鎖定語音: {TARGET_VOICE}")
-    print(f"📝 文字長度: {len(text)} 字 (已移除所有語速參數)")
-
-    for attempt in range(1, MAX_RETRIES + 1):
-        print(f"🔄 第 {attempt}/{MAX_RETRIES} 次嘗試連線...", end="", flush=True)
-        
-        try:
-            # 1. 建立連線 (不設定 rate，使用完全預設值以降低被擋機率)
-            communicate = edge_tts.Communicate(text, TARGET_VOICE)
-            
-            # 2. 使用 stream() 模式，一點一點接收數據
-            received_data = b""
-            async for message in communicate.stream():
-                if message["type"] == "audio":
-                    received_data += message["data"]
-            
-            # 3. 驗證數據
-            if len(received_data) > 0:
-                with open(output_file, "wb") as f:
-                    f.write(received_data)
-                print(f" ✅ 成功！(下載 {len(received_data)} bytes)")
-                return True
-            else:
-                print(" ❌ 失敗 (無數據)")
-        
-        except Exception as e:
-            print(f" ⚠️ 報錯: {str(e)[:50]}...")
-        
-        # 失敗後冷卻 2 秒再試
-        if attempt < MAX_RETRIES:
-            time.sleep(2)
-
-    return False
+import subprocess
+import sys
 
 def create_audio_file(text):
-    print("🎙️ 正在生成語音報導...")
+    print("🎙️ 啟動語音生成 (System CLI Mode)...")
     
-    # 1. 基礎檢查
+    # 1. 檢查文字
     if not text or not text.strip():
         print("❌ 錯誤：文字為空")
         return None
 
-    # 2. 強力清理 (只保留中文、英文、數字、基本標點)
-    # 這是為了避免特殊隱形字元導致的 "No Audio Received"
+    # 2. 清理文字 (極簡化，只移除會導致命令列崩潰的符號)
     clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
     clean_text = clean_text.replace("###", "").replace("##", "").replace("`", "")
     clean_text = re.sub(r'\$([0-9,]+)', lambda m: f"{num_to_chinese(m.group(1))}眾神幣", clean_text)
     clean_text = clean_text.replace(",", "")
-    # 移除所有 Emoji 和特殊符號，只留純文字與標點
+    # 移除 Emoji (這很重要，Emoji 會導致命令列編碼錯誤)
     clean_text = re.sub(r'[^\w\s\u4e00-\u9fa5,.:;!?，。：；！？\(\)（）]', '', clean_text)
-
+    
     if not clean_text.strip(): return None
 
-    # 3. 產生檔名
+    # 3. 準備檔案路徑
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     filename = f"托蘭市場日報 ({tw_now.strftime('%m-%d %H')}).mp3"
-
-    # 4. 執行
-    success = asyncio.run(generate_voice_robust(clean_text, filename))
     
-    if success:
-        return filename
-    else:
-        print("☠️ 最終失敗：曉雨 (HsiaoYu) 在此 IP 被微軟強力封鎖，已嘗試 3 次皆無果。")
+    # 為了避免命令列長度限制，我們先將文字寫入暫存檔
+    temp_txt_path = "temp_tts_input.txt"
+    with open(temp_txt_path, "w", encoding="utf-8") as f:
+        f.write(clean_text)
+
+    # 4. 執行命令列 (使用 sys.executable 確保用的是同一個 Python 環境)
+    # 指令等同於: edge-tts --voice zh-TW-HsiaoYuNeural --file temp_tts_input.txt --write-media output.mp3
+    cmd = [
+        sys.executable, "-m", "edge_tts",
+        "--voice", "zh-TW-HsiaoYuNeural",
+        "--file", temp_txt_path,
+        "--write-media", filename
+    ]
+
+    print(f"🔥 [強制模式] 執行系統命令，鎖定曉雨...")
+    
+    try:
+        # 執行外部命令，並捕獲輸出
+        result = subprocess.run(
+            cmd, 
+            capture_output=True, 
+            text=True, 
+            check=True, # 如果失敗會噴出 CalledProcessError
+            timeout=60  # 設定 60 秒超時
+        )
+        
+        # 檢查檔案是否生成
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
+            print(f"✅ 系統命令執行成功！音檔已生成。")
+            # 清理暫存文字檔
+            if os.path.exists(temp_txt_path): os.remove(temp_txt_path)
+            return filename
+        else:
+            print("❌ 命令執行完成但沒有產生檔案。")
+            return None
+
+    except subprocess.CalledProcessError as e:
+        print("\n" + "="*40)
+        print("🛑 系統命令被「卡」住了！回傳錯誤如下：")
+        print(f"錯誤代碼 (Return Code): {e.returncode}")
+        print(f"標準錯誤 (Stderr): {e.stderr}")
+        print("="*40)
+        
+        if "401" in e.stderr:
+            print("👉 還是 401？請確認 requirements.txt 有用 git 安裝最新版 edge-tts。")
+        elif "No audio" in e.stderr:
+            print("💀 絕望結論：微軟已將 GitHub Actions 的 IP 完全封鎖，無法使用曉雨。")
+        
+        return None
+        
+    except Exception as e:
+        print(f"❌ 發生未預期的系統錯誤: {e}")
         return None
 
 # ==========================================
