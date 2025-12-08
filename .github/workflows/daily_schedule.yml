@@ -2,7 +2,7 @@ name: Toram Daily Report
 
 on:
   schedule:
-    - cron: '0 14 * * *' # 每天台灣時間 22:00
+    - cron: '40 13 * * *' # 每天台灣時間 21:40
   workflow_dispatch:
 
 jobs:
