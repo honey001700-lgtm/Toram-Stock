@@ -106,93 +106,34 @@ def generate_ai_script(market_stats, ai_focus_items):
     return get_backup_script()
 
 # ==========================================
-# 🎵 使用 Edge-TTS 生成加速語音 (完整修正版)
+# 🎵 NEW: 使用 Edge-TTS 生成加速語音
 # ==========================================
-
-# 1. 數字轉中文輔助函式 (解決 TTS 亂念數字問題)
-def num_to_chinese(num_str):
-    """
-    將 "25,555,555" 這樣的字串轉換為 "二千五百五十五萬五千五百五十五"
-    """
-    try:
-        n = int(num_str.replace(",", ""))
-    except:
-        return num_str
-        
-    if n == 0: return "零"
-
-    units = ['', '萬', '億']
-    nums = '零一二三四五六七八九'
-    
-    def _block_to_chinese(num):
-        s = ""
-        if num >= 1000:
-            s += nums[num // 1000] + "千"
-            num %= 1000
-            if num < 100: s += "零"
-        if num >= 100:
-            s += nums[num // 100] + "百"
-            num %= 100
-            if num < 10 and num > 0: s += "零"
-        if num >= 10:
-            s += nums[num // 10] + "十"
-            num %= 10
-        if num > 0:
-            s += nums[num]
-        return s.strip("零")
-
-    result = ""
-    unit_idx = 0
-    while n > 0:
-        block = n % 10000
-        if block > 0:
-            block_str = _block_to_chinese(block)
-            result = block_str + units[unit_idx] + result
-        n //= 10000
-        unit_idx += 1
-    
-    if result.startswith("一十"):
-        result = result[1:]
-        
-    return result
-
-# 2. 非同步語音生成函式 (這是您報錯說缺少的部分)
 async def generate_voice_async(text, output_file):
     # rate='+30%' 代表加速 30%
     communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
     await communicate.save(output_file)
 
-# 3. 建立音檔主函式
 def create_audio_file(text):
     print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
-        # (1) 產生動態檔名
+        # 1. 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
+        
+        # 格式: [ 托蘭市場日報 (12-08 14點) ].mp3
+        # 注意：使用 - 分隔日期，避免路徑錯誤
         month_day = tw_now.strftime('%m-%d')
         hour = tw_now.strftime('%H')
         filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
 
-        # (2) 清理文字
-        # 移除粗體、標題
+        # 2. 清理文字 (移除 Emoji 與特殊符號)
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
-
-        # 【核心修改】將 "$25,555,555" 轉成 "二千五百...眾神幣"
-        clean_text = re.sub(
-            r'\$([0-9,]+)', 
-            lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
-            clean_text
-        )
-
-        # 移除逗號
-        clean_text = clean_text.replace(",", "")
-
         # 移除 Emoji
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
-        # (3) 執行非同步生成
+        # 3. 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:
@@ -216,7 +157,7 @@ def send_discord_webhook(embeds, file_path=None):
     try:
         if file_path and os.path.exists(file_path):
             with open(file_path, 'rb') as f:
-                # 使用 multipart/form-data
+                # 使用 multipart/form-data，Discord 會自動處理顯示位置
                 files = {'file': (file_path, f, 'audio/mpeg')}
                 response = requests.post(
                     DISCORD_WEBHOOK_URL, 
@@ -362,7 +303,7 @@ def main():
             
         embeds.append({
             "title": "📋 精選數據看板",
-            "description": "*(此區域數據不包含在語音播報中)*",
+            "description": "*(此區域大多數據不包含在語音播報中)*",
             "color": 3447003,
             "fields": fields,
             "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
