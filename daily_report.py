@@ -170,7 +170,7 @@ async def generate_voice_diagnostic(text, output_file):
 
     try:
         # 建立連線物件
-        communicate = edge_tts.Communicate(text, TARGET_VOICE, rate="+30%")
+        communicate = edge_tts.Communicate(text, TARGET_VOICE, rate="+0%")
         
         # 嘗試生成
         await communicate.save(output_file)
