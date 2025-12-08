@@ -161,97 +161,79 @@ def num_to_chinese(num_str):
 # 🎵 使用 Edge-TTS 生成 (單一人聲 + 深度診斷版)
 # ==========================================
 
-async def generate_voice_diagnostic(text, output_file):
-    # 【設定】只使用這一個聲音，絕不切換
-    TARGET_VOICE = "zh-TW-HsiaoYuNeural" 
+# ==========================================
+# 🎵 使用 Edge-TTS 生成 (死纏爛打版 - 專攻曉雨)
+# ==========================================
+
+async def generate_voice_robust(text, output_file):
+    TARGET_VOICE = "zh-TW-HsiaoYuNeural"
+    MAX_RETRIES = 3
     
-    print(f"🔍 [診斷模式] 準備使用語音: {TARGET_VOICE}")
-    print(f"📊 [診斷模式] 文字長度: {len(text)} 字")
+    print(f"🔥 [死纏爛打模式] 鎖定語音: {TARGET_VOICE}")
+    print(f"📝 文字長度: {len(text)} 字 (已移除所有語速參數)")
 
-    try:
-        # 建立連線物件
-        communicate = edge_tts.Communicate(text, TARGET_VOICE, rate="+0%")
+    for attempt in range(1, MAX_RETRIES + 1):
+        print(f"🔄 第 {attempt}/{MAX_RETRIES} 次嘗試連線...", end="", flush=True)
         
-        # 嘗試生成
-        await communicate.save(output_file)
+        try:
+            # 1. 建立連線 (不設定 rate，使用完全預設值以降低被擋機率)
+            communicate = edge_tts.Communicate(text, TARGET_VOICE)
+            
+            # 2. 使用 stream() 模式，一點一點接收數據
+            received_data = b""
+            async for message in communicate.stream():
+                if message["type"] == "audio":
+                    received_data += message["data"]
+            
+            # 3. 驗證數據
+            if len(received_data) > 0:
+                with open(output_file, "wb") as f:
+                    f.write(received_data)
+                print(f" ✅ 成功！(下載 {len(received_data)} bytes)")
+                return True
+            else:
+                print(" ❌ 失敗 (無數據)")
         
-        # 檢查結果
-        if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-            print(f"✅ 語音生成成功！檔案大小: {os.path.getsize(output_file)} bytes")
-            return True
-        else:
-            print("❌ 生成失敗：檔案雖然沒有報錯，但產出的檔案是空的 (0 bytes)。")
-            print("👉 可能原因：傳入的文字含有微軟無法處理的字元，或被伺服器靜默拒絕。")
-            return False
+        except Exception as e:
+            print(f" ⚠️ 報錯: {str(e)[:50]}...")
+        
+        # 失敗後冷卻 2 秒再試
+        if attempt < MAX_RETRIES:
+            time.sleep(2)
 
-    except Exception as e:
-        error_msg = str(e)
-        print("\n" + "="*40)
-        print("🛑 語音生成被「卡住」了！詳細原因分析：")
-        print("="*40)
-        
-        # --- 針對不同錯誤代碼進行分析 ---
-        
-        if "401" in error_msg or "Unauthorized" in error_msg:
-            print("💀 錯誤類型：【401 驗證失敗 (Unauthorized)】")
-            print("👉 原因：您的 edge-tts 套件版本過舊，微軟的金鑰已更換。")
-            print("🔧 解法：必須在 requirements 或 actions 裡使用 'git+https://github.com/rany2/edge-tts.git@master'")
-            
-        elif "No audio was received" in error_msg:
-            print("🔇 錯誤類型：【無音訊回傳 (No Audio Received)】")
-            print("👉 原因：")
-            print("   1. 微軟伺服器主動切斷連線 (可能是 IP 頻率過高)。")
-            print("   2. 該語音模型暫時維修中。")
-            print("   3. 文字格式有問題 (例如全都是符號)。")
-            
-        elif "400" in error_msg or "BadRequest" in error_msg:
-            print("⚠️ 錯誤類型：【400 請求錯誤 (Bad Request)】")
-            print("👉 原因：傳送的文字格式錯誤，SSML 標籤不對，或者含有非法字元。")
-            
-        elif "Connection" in error_msg or "socket" in error_msg:
-            print("🔌 錯誤類型：【連線失敗 (Connection Error)】")
-            print("👉 原因：網路不穩，無法連上微軟 Edge 伺服器 (wss://speech.platform.bing.com)。")
-            
-        else:
-            print(f"❓ 未知錯誤類型：{error_msg}")
-            
-        print("="*40 + "\n")
-        return False
+    return False
 
 def create_audio_file(text):
-    print("🎙️ 正在生成語音報導 (嚴格模式)...")
+    print("🎙️ 正在生成語音報導...")
     
-    # 1. 檢查文字內容
+    # 1. 基礎檢查
     if not text or not text.strip():
-        print("❌ 卡住原因：輸入的文字是空的 (Empty String)。")
+        print("❌ 錯誤：文字為空")
         return None
 
-    # 2. 清理文字
-    # 這裡只做最基本的清理，保留大部分內容以便測試
+    # 2. 強力清理 (只保留中文、英文、數字、基本標點)
+    # 這是為了避免特殊隱形字元導致的 "No Audio Received"
     clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
     clean_text = clean_text.replace("###", "").replace("##", "").replace("`", "")
     clean_text = re.sub(r'\$([0-9,]+)', lambda m: f"{num_to_chinese(m.group(1))}眾神幣", clean_text)
     clean_text = clean_text.replace(",", "")
-    # 移除 Emoji (這通常是卡住的主因之一)
-    clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
-    clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
+    # 移除所有 Emoji 和特殊符號，只留純文字與標點
+    clean_text = re.sub(r'[^\w\s\u4e00-\u9fa5,.:;!?，。：；！？\(\)（）]', '', clean_text)
 
-    if not clean_text.strip():
-        print("❌ 卡住原因：文字清理後變成了空白 (可能是原文全都是 Emoji 或特殊符號)。")
-        return None
+    if not clean_text.strip(): return None
 
-    # 3. 執行生成 (包含詳細診斷)
+    # 3. 產生檔名
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     filename = f"托蘭市場日報 ({tw_now.strftime('%m-%d %H')}).mp3"
 
-    success = asyncio.run(generate_voice_diagnostic(clean_text, filename))
+    # 4. 執行
+    success = asyncio.run(generate_voice_robust(clean_text, filename))
     
     if success:
         return filename
     else:
-        # 失敗時直接回傳 None，不使用任何備用方案
-        print("❌ 因語音生成失敗，本次日報將不包含音檔。")
+        print("☠️ 最終失敗：曉雨 (HsiaoYu) 在此 IP 被微軟強力封鎖，已嘗試 3 次皆無果。")
         return None
 
 # ==========================================
