@@ -2,7 +2,7 @@ name: Toram Daily Report
 
 on:
   schedule:
-    - cron: '40 13 * * *' # UTC 13:40 = 台灣時間 21:40
+    - cron: '35 16 * * *' # UTC 13:40 = 台灣時間 21:40
   workflow_dispatch:
 
 jobs:
@@ -23,9 +23,9 @@ jobs:
           pip install --upgrade pip
           pip install --upgrade edge-tts
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
-          
+
       - name: Check specifically for HsiaoChen
-        run: |
+        run: |  
           echo "正在檢查微軟伺服器上的台灣語音列表..."
           edge-tts --list-voices | grep "zh-TW"
 
