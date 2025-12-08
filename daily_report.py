@@ -9,6 +9,8 @@ import re
 import asyncio 
 import edge_tts 
 import google.generativeai as genai 
+import subprocess
+import sys
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
 import logging
@@ -157,89 +159,66 @@ def num_to_chinese(num_str):
     return result
 
 # 2. 非同步語音生成函式 (這是您報錯說缺少的部分)
-# ==========================================
-# 🎵 使用 Edge-TTS 生成 (系統命令強制執行版)
-# ==========================================
-import subprocess
-import sys
-
 def create_audio_file(text):
-    print("🎙️ 啟動語音生成 (System CLI Mode)...")
+    print("🎙️ 啟動語音生成 (CLI Mode + 加速30%)...")
     
-    # 1. 檢查文字
     if not text or not text.strip():
         print("❌ 錯誤：文字為空")
         return None
 
-    # 2. 清理文字 (極簡化，只移除會導致命令列崩潰的符號)
+    # 1. 清理文字
     clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
     clean_text = clean_text.replace("###", "").replace("##", "").replace("`", "")
     clean_text = re.sub(r'\$([0-9,]+)', lambda m: f"{num_to_chinese(m.group(1))}眾神幣", clean_text)
     clean_text = clean_text.replace(",", "")
-    # 移除 Emoji (這很重要，Emoji 會導致命令列編碼錯誤)
     clean_text = re.sub(r'[^\w\s\u4e00-\u9fa5,.:;!?，。：；！？\(\)（）]', '', clean_text)
     
     if not clean_text.strip(): return None
 
-    # 3. 準備檔案路徑
+    # 2. 準備檔案
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     filename = f"托蘭市場日報 ({tw_now.strftime('%m-%d %H')}).mp3"
     
-    # 為了避免命令列長度限制，我們先將文字寫入暫存檔
     temp_txt_path = "temp_tts_input.txt"
     with open(temp_txt_path, "w", encoding="utf-8") as f:
         f.write(clean_text)
 
-    # 4. 執行命令列 (使用 sys.executable 確保用的是同一個 Python 環境)
-    # 指令等同於: edge-tts --voice zh-TW-HsiaoYuNeural --file temp_tts_input.txt --write-media output.mp3
+    # 3. 執行命令 (加入 --rate +30%)
     cmd = [
         sys.executable, "-m", "edge_tts",
         "--voice", "zh-TW-HsiaoYuNeural",
+        "--rate", "+30%",  # 👈 這裡加入了加速指令
         "--file", temp_txt_path,
         "--write-media", filename
     ]
 
-    print(f"🔥 [強制模式] 執行系統命令，鎖定曉雨...")
+    print(f"🔥 [強制加速] 鎖定曉雨，語速 +30%...")
     
     try:
-        # 執行外部命令，並捕獲輸出
         result = subprocess.run(
             cmd, 
             capture_output=True, 
             text=True, 
-            check=True, # 如果失敗會噴出 CalledProcessError
-            timeout=60  # 設定 60 秒超時
+            check=True,
+            timeout=60
         )
         
-        # 檢查檔案是否生成
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            print(f"✅ 系統命令執行成功！音檔已生成。")
-            # 清理暫存文字檔
+            print(f"✅ 生成成功！音檔已加速。")
             if os.path.exists(temp_txt_path): os.remove(temp_txt_path)
             return filename
         else:
-            print("❌ 命令執行完成但沒有產生檔案。")
+            print("❌ 命令執行完成但無檔案。")
             return None
 
     except subprocess.CalledProcessError as e:
-        print("\n" + "="*40)
-        print("🛑 系統命令被「卡」住了！回傳錯誤如下：")
-        print(f"錯誤代碼 (Return Code): {e.returncode}")
-        print(f"標準錯誤 (Stderr): {e.stderr}")
-        print("="*40)
-        
-        if "401" in e.stderr:
-            print("👉 還是 401？請確認 requirements.txt 有用 git 安裝最新版 edge-tts。")
-        elif "No audio" in e.stderr:
-            print("💀 絕望結論：微軟已將 GitHub Actions 的 IP 完全封鎖，無法使用曉雨。")
-        
+        print(f"🛑 錯誤: {e.stderr}")
         return None
-        
     except Exception as e:
-        print(f"❌ 發生未預期的系統錯誤: {e}")
+        print(f"❌ 系統錯誤: {e}")
         return None
-
+    
 # ==========================================
 # 🛠️ Discord 發送功能
 # ==========================================
