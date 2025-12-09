@@ -10,6 +10,7 @@ import asyncio
 import edge_tts 
 import google.generativeai as genai 
 
+# 為了避免 Streamlit 的警告洗版，我們把它靜音
 import logging
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
@@ -25,32 +26,28 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # ==========================================
-# 🧠 AI 模型 (早晚報 - 專業分析師風格)
+# 🧠 AI 模型 (6人焦點版 - 保留熱情風格 + 精準早晚結尾)
 # ==========================================
 def generate_ai_script(market_stats, ai_focus_items, report_type):
     
-    # 時間設定 (台灣時間)
+    # 1. 時間設定
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     date_str = tw_now.strftime("%Y-%m-%d %A")
 
-    # --- 依據早晚報設定不同的情境 ---
+    # --- 設定早晚報的情境與結尾 ---
     if report_type == "早報":
-        greeting = "大家早安！"
-        time_focus = "為大家帶來『昨晚到今早』的市場重點變化。"
-        closing_instruction = """
-        結尾請保持「充滿希望、蓄勢待發」的語氣。
-        範例風格：「機會總是在變化中產生，祝大家今天交易順利！記得持續關注市場動態。」
-        最後一句強制說：「我是托蘭分析師，我們今晚見！👋」
-        """
-    else: # 晚報
-        greeting = "大家晚安！"
-        time_focus = "為大家總結『今天一整天』的市場動態。"
-        closing_instruction = """
-        結尾請保持「穩重、總結、提醒風險」的語氣。
-        範例風格：「希望大家都能賺得盆滿缽滿，但別忘了風險管理永遠是第一要務！投資務必保持冷靜。」
-        最後一句強制說：「我是托蘭分析師，我們明天見！👋」
-        """
+        # 早報情境
+        greeting = "早安"
+        time_context = "昨晚到今早"
+        # 結尾：鼓勵一天開始 + 預告晚上見
+        ending_instruction = "結尾請維持熱情專業，鼓勵玩家把握今天的好時機，最後強制要說『我們今晚見！』"
+    else:
+        # 晚報情境
+        greeting = "晚安"
+        time_context = "今天白天"
+        # 結尾：總結一天 + 提醒休息/掛機 + 預告明早見
+        ending_instruction = "結尾請維持溫馨提醒（如風險管理或早點休息），最後強制要說『我們明早見！』"
 
     # 備用文案
     def get_backup_script():
@@ -58,24 +55,24 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     
     if not GEMINI_API_KEY: return get_backup_script()
 
-    # --- 準備物品清單 ---
+    # --- 準備 Prompt ---
     items_str = ""
     for h in ai_focus_items:
         role = h.get('role', '重點關注')
         tags_str = ", ".join(h['tags']) if h['tags'] else "無"
         items_str += f"- {h['item']} ({role}): 漲跌 {h['change_pct']:+.1f}%, 價格 {h['price']:,.0f}, 特徵: {tags_str}\n"
 
-    # --- 構建 Prompt ---
     prompt = f"""
     【角色設定】
-    你是一位名叫「托蘭分析師」的專業市場分析師。
-    語氣：就像台灣財經台的王牌分析師，專業、犀利、但對觀眾很親切。
+    你是一位名叫「托蘭分析師」的托蘭市場分析師。
+    語氣：冷靜、熱情、專業，就像台灣的財經達人 YouTuber。
+    風格：喜歡在結尾說一些金句（例如：機會總是在變化中產生、風險管理永遠是第一要務）。
     
     【時間情境】
-    - 現在是：{date_str} 的 **{report_type}** 時段。
-    - 開場請說：{greeting}
-    - 內容重點：{time_focus}
-
+    - 日期：{date_str}
+    - 時段：**{report_type}**
+    - 開場問候：請說「{greeting}」，並說明這是「{time_context}」的市場變化。
+    
     【市場數據】
     - 上漲 {market_stats['up']} 家 / 下跌 {market_stats['down']} 家
     - 平均漲跌幅：{market_stats['avg_change']:+.1f}%
@@ -92,9 +89,9 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
        - 價格：必須寫成 **$10,000,000** (粗體 + 錢字號 + 千分位)，前後留空白。
        - 漲跌：必須寫成 **+237.2%** (粗體 + 正負號 + 百分比)，前後留空白。
     4. **特徵解讀**：如果物品有「頭肩頂」或「三角收斂」，請順口提到這代表什麼（例如：要注意回檔喔）。
-    5. **結尾風格 (重要)**：
-       {closing_instruction}
-    
+    4. **結尾設定 (重要)**：
+       - 請保留原本的風格（有漲有跌、投資需謹慎、賺得盆滿缽滿之類的專業結尾）。
+       - {ending_instruction}
     6. 字數約 350 字，多用Emoji。
     """
 
@@ -103,7 +100,8 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        priority_list = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-001"]
+        # 優先順序調整
+        priority_list = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-001", "flash"]
         seen = set()
         for p in priority_list:
             for m in all_models:
@@ -129,17 +127,24 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     return get_backup_script()
 
 # ==========================================
-# 🎵 Edge-TTS 生成語音
+# 🎵 使用 Edge-TTS 生成加速語音 (完整修正版)
 # ==========================================
 
+# 1. 數字轉中文輔助函式 (解決 TTS 亂念數字問題)
 def num_to_chinese(num_str):
+    """
+    將 "25,555,555" 這樣的字串轉換為 "二千五百五十五萬五千五百五十五"
+    """
     try:
         n = int(num_str.replace(",", ""))
     except:
         return num_str
+        
     if n == 0: return "零"
+
     units = ['', '萬', '億']
     nums = '零一二三四五六七八九'
+    
     def _block_to_chinese(num):
         s = ""
         if num >= 1000:
@@ -156,6 +161,7 @@ def num_to_chinese(num_str):
         if num > 0:
             s += nums[num]
         return s.strip("零")
+
     result = ""
     unit_idx = 0
     while n > 0:
@@ -165,33 +171,49 @@ def num_to_chinese(num_str):
             result = block_str + units[unit_idx] + result
         n //= 10000
         unit_idx += 1
-    if result.startswith("一十"): result = result[1:]
+    
+    if result.startswith("一十"):
+        result = result[1:]
+        
     return result
 
+# 2. 非同步語音生成函式 (這是您報錯說缺少的部分)
 async def generate_voice_async(text, output_file):
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+25%")
+    # rate='+30%' 代表加速 30%
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
     await communicate.save(output_file)
 
-def create_audio_file(text, report_type):
-    print("🎙️ 正在生成語音報導...")
+# 3. 建立音檔主函式
+def create_audio_file(text):
+    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
+        # (1) 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
         month_day = tw_now.strftime('%m-%d')
-        # 檔名加上時段，避免重複
-        filename = f"托蘭市場{report_type} ({month_day}).mp3"
+        hour = tw_now.strftime('%H')
+        filename = f"托蘭市場日報 ({month_day} {hour}點).mp3"
 
+        # (2) 清理文字
+        # 移除粗體、標題
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
+
+        # 【核心修改】將 "$25,555,555" 轉成 "二千五百...眾神幣"
         clean_text = re.sub(
             r'\$([0-9,]+)', 
             lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
             clean_text
         )
+
+        # 移除逗號
         clean_text = clean_text.replace(",", "")
+
+        # 移除 Emoji
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
+        # (3) 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:
@@ -215,6 +237,7 @@ def send_discord_webhook(embeds, file_path=None):
     try:
         if file_path and os.path.exists(file_path):
             with open(file_path, 'rb') as f:
+                # 使用 multipart/form-data
                 files = {'file': (file_path, f, 'audio/mpeg')}
                 response = requests.post(
                     DISCORD_WEBHOOK_URL, 
@@ -242,20 +265,9 @@ def main():
     df, err = load_data(SHEET_URL)
     if df.empty: return
 
-    # 2. 時間與時段判斷
+    # 2. 時間設定
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
-    
-    # 判斷早晚報 (假設 5:00 ~ 16:00 為早報時段)
-    current_hour = tw_now.hour
-    if 5 <= current_hour < 16:
-        report_type = "早報"
-    else:
-        report_type = "晚報"
-
-    print(f"🕒 台灣時間: {tw_now}, 報告類型: {report_type}")
-
-    # 數據比較範圍：過去 25 小時
     yesterday = tw_now - pd.Timedelta(hours=25)
     
     if not pd.api.types.is_datetime64_any_dtype(df['時間']):
@@ -327,20 +339,20 @@ def main():
         if len(ai_focus_items) >= 6: break
         add_item(h, "重點關注")
 
-    # 5. 生成 AI 報告 (傳入 report_type)
-    ai_script, color = generate_ai_script(market_stats, ai_focus_items, report_type)
+    # 5. 生成 AI 報告
+    ai_script, color = generate_ai_script(market_stats, ai_focus_items)
 
-    # 6. 生成音檔
+    # 6. 生成音檔 (只針對 AI 腳本)
     audio_file_path = None
     if ai_script and "AI 分析師連線忙碌中" not in ai_script:
-        audio_file_path = create_audio_file(ai_script, report_type)
+        audio_file_path = create_audio_file(ai_script)
 
     # --- 7. 製作 Embeds ---
     embeds = []
     
-    # [Embed 1] AI 報告 (標題動態顯示早報/晚報)
+    # [Embed 1] AI 日報
     embeds.append({
-        "title": f"🎙️ 托蘭市場{report_type} ({tw_now.strftime('%m/%d')})",
+        "title": f"🎙️ 托蘭市場日報 ({tw_now.strftime('%m/%d')})",
         "description": ai_script,
         "color": color,
         "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
@@ -377,7 +389,7 @@ def main():
             "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
         })
 
-    # 8. 發送
+    # 8. 發送 (Discord 處理順序)
     send_discord_webhook(embeds, file_path=audio_file_path)
 
     # 9. 清理暫存
