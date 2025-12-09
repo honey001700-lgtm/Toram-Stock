@@ -250,4 +250,151 @@ def main():
     df, err = load_data(SHEET_URL)
     if df.empty: return
 
-    # 2. 時間與時段
+    # 2. 時間與時段判斷
+    utc_now = datetime.datetime.utcnow()
+    tw_now = utc_now + datetime.timedelta(hours=8)
+    
+    # 【關鍵修復】判斷早晚報
+    current_hour = tw_now.hour
+    # 早上5點到下午4點之間執行都算早報 (涵蓋 09:40)
+    # 其他時間算晚報 (涵蓋 21:40)
+    if 5 <= current_hour < 16:
+        report_type = "早報"
+    else:
+        report_type = "晚報"
+
+    print(f"🕒 當前台灣時間: {tw_now}, 執行報告類型: {report_type}")
+
+    yesterday = tw_now - pd.Timedelta(hours=25)
+    
+    if not pd.api.types.is_datetime64_any_dtype(df['時間']):
+        df['時間'] = pd.to_datetime(df['時間'])
+
+    recent_df = df[df['時間'] >= yesterday]
+    active_items = recent_df['物品'].unique().tolist()
+    
+    # --- 3. 數據收集與分析 ---
+    all_changes = [] 
+    highlights = []
+    
+    for item in active_items:
+        item_df = filter_and_prepare_data(df, item)
+        if len(item_df) < 5: continue 
+
+        latest = item_df.iloc[-1]['單價']
+        try:
+            prev = item_df[item_df['時間'] <= yesterday].iloc[-1]['單價']
+        except:
+            prev = item_df.iloc[0]['單價']
+            
+        change = ((latest - prev) / prev) * 100 if prev else 0
+        all_changes.append(change)
+
+        patterns = detect_patterns(item_df)
+        events = detect_events(item_df)
+        tags = [p['type'] for p in patterns if any(k in p['type'] for k in ["頭肩", "雙重", "三角"])]
+        tags += [e['type'] for e in events if "新高" in e['type'] or "新低" in e['type']]
+
+        if abs(change) >= 10 or tags:
+            highlights.append({
+                "item": item,
+                "price": latest,
+                "change_pct": change,
+                "tags": tags
+            })
+
+    market_stats = {
+        'up': sum(1 for x in all_changes if x > 0),
+        'down': sum(1 for x in all_changes if x < 0),
+        'avg_change': sum(all_changes) / len(all_changes) if all_changes else 0
+    }
+
+    # --- 4. 挑選焦點物品 ---
+    ai_focus_items = []
+    selected_names = set()
+    def add_item(item_obj, role_name):
+        if item_obj['item'] not in selected_names:
+            item_obj['role'] = role_name
+            ai_focus_items.append(item_obj)
+            selected_names.add(item_obj['item'])
+
+    highlights.sort(key=lambda x: x['change_pct'], reverse=True)
+    if highlights and highlights[0]['change_pct'] > 0: add_item(highlights[0], "漲幅冠軍")
+    if len(highlights) > 1 and highlights[1]['change_pct'] > 0: add_item(highlights[1], "強勢副手")
+    highlights.sort(key=lambda x: x['change_pct']) 
+    if highlights and highlights[0]['change_pct'] < 0: add_item(highlights[0], "跌幅最重")
+    high_breakers = [h for h in highlights if any("新高" in t for t in h['tags'])]
+    if high_breakers:
+        high_breakers.sort(key=lambda x: x['change_pct'], reverse=True)
+        add_item(high_breakers[0], "創歷史新高")
+    pattern_items = [h for h in highlights if any(k in "".join(h['tags']) for k in ["頭肩", "雙重", "三角"])]
+    if pattern_items:
+        pattern_items.sort(key=lambda x: len(x['tags']), reverse=True)
+        add_item(pattern_items[0], "技術型態")
+    highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+    for h in highlights:
+        if len(ai_focus_items) >= 6: break
+        add_item(h, "重點關注")
+
+    # 5. 生成 AI 報告 (傳入 report_type)
+    # 【關鍵修復】這裡原本少傳了 report_type
+    ai_script, color = generate_ai_script(market_stats, ai_focus_items, report_type)
+
+    # 6. 生成音檔
+    audio_file_path = None
+    if ai_script and "AI 分析師連線忙碌中" not in ai_script:
+        # 【關鍵修復】這裡原本少傳了 report_type
+        audio_file_path = create_audio_file(ai_script, report_type)
+
+    # --- 7. 製作 Embeds ---
+    embeds = []
+    
+    # [Embed 1] AI 報告 (標題動態顯示早報/晚報)
+    embeds.append({
+        "title": f"🎙️ 托蘭市場{report_type} ({tw_now.strftime('%m/%d')})",
+        "description": ai_script,
+        "color": color,
+        "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
+    })
+
+    # [Embed 2] 數據看板
+    if highlights:
+        highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
+        fields = []
+        for h in highlights[:15]: 
+            emoji = "🚀" if h['change_pct'] > 0 else ("🩸" if h['change_pct'] < 0 else "➖")
+            pretty_tags = []
+            for tag in h.get('tags', []):
+                if "新高" in tag: pretty_tags.append("🔥 創歷史新高")
+                elif "新低" in tag: pretty_tags.append("🧊 創歷史新低")
+                elif "頭肩頂" in tag: pretty_tags.append("👤 頭肩頂(看跌)")
+                elif "頭肩底" in tag: pretty_tags.append("🧘 頭肩底(看漲)")
+                elif "雙重頂" in tag: pretty_tags.append("Ⓜ️ M頭(看跌)")
+                elif "雙重底" in tag: pretty_tags.append("🇼 W底(看漲)")
+                elif "三角" in tag: pretty_tags.append("📐 三角收斂")
+                else: pretty_tags.append(tag) 
+            tag_display = f"\n" + "\n".join([f"└ {t}" for t in pretty_tags]) if pretty_tags else ""
+            fields.append({
+                "name": f"{h['item']}", 
+                "value": f"{emoji} `{h['change_pct']:+.1f}%` | ${h['price']:,.0f}{tag_display}",
+                "inline": True
+            })
+            
+        embeds.append({
+            "title": "📋 精選數據看板",
+            "description": "*(此區域數據不包含在語音播報中)*",
+            "color": 3447003,
+            "fields": fields,
+            "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
+        })
+
+    # 8. 發送
+    send_discord_webhook(embeds, file_path=audio_file_path)
+
+    # 9. 清理暫存
+    if audio_file_path and os.path.exists(audio_file_path):
+        os.remove(audio_file_path)
+        print("🧹 暫存音檔已清理")
+
+if __name__ == "__main__":
+    main()
