@@ -23,15 +23,12 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # INSTALL FROM GIT to get the latest token fixes
+          # 安裝開發版以修復 Token 問題，但在 GitHub Actions IP 上仍可能被擋
           pip install git+https://github.com/rany2/edge-tts.git
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
 
-      - name: Check specifically for HsiaoChen
-        run: |  
-          echo "正在檢查微軟伺服器上的台灣語音列表..."
-          # Adding a retry or continue-on-error just in case network blips
-          edge-tts --list-voices | grep "zh-TW"
+      # 移除 "Check specifically for HsiaoChen" 步驟
+      # 因為如果微軟封鎖 IP，該步驟必定失敗並卡住整個流程
 
       - name: Run Daily Report
         env:
