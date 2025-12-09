@@ -2,9 +2,8 @@ name: Toram Daily Report
 
 on:
   schedule:
-    # 分 時 日 月 週
-    # 40 1  * * * -> UTC 01:40 = 台灣 09:40
-    # 40 13 * * * -> UTC 13:40 = 台灣 21:40
+    # UTC 01:40 = Taiwan 09:40
+    # UTC 13:40 = Taiwan 21:40
     - cron: '40 1,13 * * *'
   workflow_dispatch:
 
@@ -24,12 +23,14 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install --upgrade edge-tts
+          # INSTALL FROM GIT to get the latest token fixes
+          pip install git+https://github.com/rany2/edge-tts.git
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
 
       - name: Check specifically for HsiaoChen
         run: |  
           echo "正在檢查微軟伺服器上的台灣語音列表..."
+          # Adding a retry or continue-on-error just in case network blips
           edge-tts --list-voices | grep "zh-TW"
 
       - name: Run Daily Report
