@@ -38,10 +38,10 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     # 設定問候語情境
     if report_type == "早報":
         greeting_context = "現在是早上，請說『早安』，並說明這是『昨晚到今早』的市場變化。"
-        ending_context = "結尾請祝玩家今天工作順利。"
+        ending_context = "結尾請祝玩家今天工作順利，然後晚上10點見。"
     else: # 晚報
         greeting_context = "現在是晚上，請說『晚安』，並總結『今天一整天』的市場動態。"
-        ending_context = "結尾請提醒玩家早點休息或是享受夜間掛機。"
+        ending_context = "結尾祝玩家賺得盆滿缽滿，請提醒玩家早點休息或是享受夜間掛機。"
 
     # 備用文案
     def get_backup_script():
