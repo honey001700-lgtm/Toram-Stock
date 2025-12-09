@@ -24,13 +24,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install --upgrade edge-tts
+          # ⚠️ 強制重新安裝 GitHub 上的最新版，並加入 gTTS 作為備案
+          pip install --force-reinstall git+https://github.com/rany2/edge-tts.git
+          pip install gTTS
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
-
-      - name: Check specifically for HsiaoChen
-        run: |  
-          echo "正在檢查微軟伺服器上的台灣語音列表..."
-          edge-tts --list-voices | grep "zh-TW"
 
       - name: Run Daily Report
         env:
