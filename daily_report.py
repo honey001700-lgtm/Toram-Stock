@@ -173,37 +173,98 @@ def num_to_chinese(num_str):
         
     return result
 
-async def generate_voice_async(text, output_file):
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
-    await communicate.save(output_file)
+async def generate_segment(text, voice, rate):
+    """生成單一段落的音訊資料 (Bytes)"""
+    communicate = edge_tts.Communicate(text, voice, rate=rate)
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+    return audio_data
+
+async def generate_long_text_voice(text, output_file):
+    """將長文切片生成後合併"""
+    VOICE = "zh-TW-HsiaoChenNeural"
+    RATE = "+30%"
+    
+    # 1. 智慧切分文字 (按換行或句號切分，避免單次請求過長)
+    # 移除空行，並依據換行符號切分
+    raw_segments = [seg.strip() for seg in text.split('\n') if seg.strip()]
+    
+    final_audio_content = b""
+    
+    print(f"🎙️ 開始語音生成，共 {len(raw_segments)} 個段落...")
+
+    for i, segment in enumerate(raw_segments):
+        # 如果段落太長，還可以再二次切分 (這裡先假設每段不超過限制)
+        if len(segment) == 0: continue
+        
+        print(f"   -> 正在處理第 {i+1}/{len(raw_segments)} 段 ({len(segment)}字)...")
+        
+        # 簡單的重試機制
+        for attempt in range(3):
+            try:
+                # 這裡暫停一下，避免請求太快被微軟鎖 IP
+                if i > 0: time.sleep(0.5) 
+                
+                segment_audio = await generate_segment(segment, VOICE, RATE)
+                
+                if len(segment_audio) > 0:
+                    final_audio_content += segment_audio
+                    break # 成功就跳出重試迴圈
+                else:
+                    print(f"      ⚠️ 第 {i+1} 段生成為空，重試中 ({attempt+1}/3)...")
+            except Exception as e:
+                print(f"      ⚠️ 第 {i+1} 段發生錯誤: {e}，重試中 ({attempt+1}/3)...")
+                time.sleep(1) # 發生錯誤多休一秒
+        else:
+            print(f"      ❌ 第 {i+1} 段最終失敗，將被跳過。")
+
+    # 2. 寫入最終檔案
+    if len(final_audio_content) > 0:
+        with open(output_file, "wb") as f:
+            f.write(final_audio_content)
+        return True
+    else:
+        return False
 
 def create_audio_file(text, report_type):
-    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
+    print("🎙️ 正在準備語音報導 (切片合成模式)...")
     try:
         # (1) 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
         month_day = tw_now.strftime('%m-%d')
-        # 檔名加入早晚報標識
         filename = f"托蘭市場{report_type} ({month_day}).mp3"
 
         # (2) 清理文字
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
+        # 處理金錢
         clean_text = re.sub(
             r'\$([0-9,]+)', 
             lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
             clean_text
         )
         clean_text = clean_text.replace(",", "")
+        # 移除 Emoji (TTS 不會念 Emoji，有時候會報錯)
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
-        # (3) 執行非同步生成
-        asyncio.run(generate_voice_async(clean_text, filename))
-        return filename
+        # (3) 執行切片生成
+        # 使用 asyncio.run 執行非同步函式
+        success = asyncio.run(generate_long_text_voice(clean_text, filename))
+        
+        if success:
+            file_size = os.path.getsize(filename) / 1024 # KB
+            print(f"✅ 語音合成完成！檔案大小: {file_size:.2f} KB")
+            return filename
+        else:
+            print("❌ 語音合成失敗：產出的音訊為空")
+            return None
+
     except Exception as e:
-        print(f"❌ 語音生成失敗: {e}")
+        print(f"❌ 語音生成流程嚴重錯誤: {e}")
         return None
 
 # ==========================================
