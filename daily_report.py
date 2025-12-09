@@ -10,7 +10,6 @@ import asyncio
 import edge_tts 
 import google.generativeai as genai 
 
-# 為了避免 Streamlit 的警告洗版，我們把它靜音
 import logging
 logging.getLogger("streamlit").setLevel(logging.ERROR)
 
@@ -26,22 +25,32 @@ DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 # ==========================================
-# 🧠 AI 模型 (6人焦點版 - 早晚報自動切換)
+# 🧠 AI 模型 (早晚報 - 專業分析師風格)
 # ==========================================
 def generate_ai_script(market_stats, ai_focus_items, report_type):
     
-    # 1. 時間設定 (強制使用台灣時間 UTC+8)
+    # 時間設定 (台灣時間)
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     date_str = tw_now.strftime("%Y-%m-%d %A")
 
-    # 設定問候語情境
+    # --- 依據早晚報設定不同的情境 ---
     if report_type == "早報":
-        greeting_context = "現在是早上，請說『早安』，並說明這是『昨晚到今早』的市場變化。"
-        ending_context = "結尾請祝玩家今天工作順利，然後晚上10點見。"
+        greeting = "大家早安！"
+        time_focus = "為大家帶來『昨晚到今早』的市場重點變化。"
+        closing_instruction = """
+        結尾請保持「充滿希望、蓄勢待發」的語氣。
+        範例風格：「機會總是在變化中產生，祝大家今天交易順利！記得持續關注市場動態。」
+        最後一句強制說：「我是托蘭分析師，我們今晚見！👋」
+        """
     else: # 晚報
-        greeting_context = "現在是晚上，請說『晚安』，並總結『今天一整天』的市場動態。"
-        ending_context = "結尾祝玩家賺得盆滿缽滿，請提醒玩家早點休息或是享受夜間掛機。"
+        greeting = "大家晚安！"
+        time_focus = "為大家總結『今天一整天』的市場動態。"
+        closing_instruction = """
+        結尾請保持「穩重、總結、提醒風險」的語氣。
+        範例風格：「希望大家都能賺得盆滿缽滿，但別忘了風險管理永遠是第一要務！投資務必保持冷靜。」
+        最後一句強制說：「我是托蘭分析師，我們明天見！👋」
+        """
 
     # 備用文案
     def get_backup_script():
@@ -49,23 +58,24 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     
     if not GEMINI_API_KEY: return get_backup_script()
 
-    # --- 準備 Prompt ---
+    # --- 準備物品清單 ---
     items_str = ""
     for h in ai_focus_items:
         role = h.get('role', '重點關注')
         tags_str = ", ".join(h['tags']) if h['tags'] else "無"
         items_str += f"- {h['item']} ({role}): 漲跌 {h['change_pct']:+.1f}%, 價格 {h['price']:,.0f}, 特徵: {tags_str}\n"
 
+    # --- 構建 Prompt ---
     prompt = f"""
     【角色設定】
-    你是一位名叫「托蘭分析師」的托蘭市場分析師。
-    語氣：冷靜、熱情、專業，就像台灣的財經達人 YouTuber。
+    你是一位名叫「托蘭分析師」的專業市場分析師。
+    語氣：就像台灣財經台的王牌分析師，專業、犀利、但對觀眾很親切。
     
     【時間情境】
-    - 日期：{date_str}
-    - 時段：**{report_type}**
-    - {greeting_context}
-    
+    - 現在是：{date_str} 的 **{report_type}** 時段。
+    - 開場請說：{greeting}
+    - 內容重點：{time_focus}
+
     【市場數據】
     - 上漲 {market_stats['up']} 家 / 下跌 {market_stats['down']} 家
     - 平均漲跌幅：{market_stats['avg_change']:+.1f}%
@@ -74,18 +84,17 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     {items_str}
 
     【寫作要求】
-    1. **自然流暢**：請順暢地介紹這 6 個物品，**不要**使用「紅榜區」、「警示區」這種生硬的分類標題。
+    1. **自然流暢**：順暢介紹這 6 個物品，把數據融入解說中，不要像念清單。
     2. **情緒起伏**：
-       - 講到大漲、創新高的物品時要開心、恭喜玩家。
-       - 講到大跌、或有「頭肩頂」的物品時，語氣轉為關心、提醒風險。
-    3. **強制格式 (非常重要)**：
-       - 價格：必須寫成 **$10,000,000** (粗體 + 錢字號 + 千分位)，前後留空白。
-       - 漲跌：必須寫成 **+237.2%** (粗體 + 正負號 + 百分比)，前後留空白。
-    4. **特徵解讀**：如果物品有「頭肩頂」或「三角收斂」，請順口提到這代表什麼（例如：要注意回檔喔）。
-    5. **結尾強制指令**：
-       - {ending_context}
-       - **絕對不要說**「下週見」。
-    6. 字數約 350 字，多用Emoji。
+       - 創新高時：要興奮、恭喜持有者。
+       - 大跌或技術面轉空（頭肩頂/M頭）時：語氣要轉為嚴肅，提醒觀眾「小心回檔」、「注意風險」。
+    3. **強制格式**：
+       - 價格：**$10,000,000** (粗體+錢號+千分位)
+       - 漲跌：**+23.5%** (粗體+正負號+百分比)
+    4. **結尾風格 (重要)**：
+       {closing_instruction}
+    
+    5. 字數約 350 字，適度使用 Emoji (🚀, 📉, 💡, 💰)。
     """
 
     # --- 呼叫模型 ---
@@ -93,7 +102,7 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        priority_list = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-001", "flash"]
+        priority_list = ["gemini-2.0-flash-exp", "gemini-1.5-flash", "gemini-1.5-flash-001"]
         seen = set()
         for p in priority_list:
             for m in all_models:
@@ -119,7 +128,7 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     return get_backup_script()
 
 # ==========================================
-# 🎵 使用 Edge-TTS 生成加速語音
+# 🎵 Edge-TTS 生成語音
 # ==========================================
 
 def num_to_chinese(num_str):
@@ -127,12 +136,9 @@ def num_to_chinese(num_str):
         n = int(num_str.replace(",", ""))
     except:
         return num_str
-        
     if n == 0: return "零"
-
     units = ['', '萬', '億']
     nums = '零一二三四五六七八九'
-    
     def _block_to_chinese(num):
         s = ""
         if num >= 1000:
@@ -149,7 +155,6 @@ def num_to_chinese(num_str):
         if num > 0:
             s += nums[num]
         return s.strip("零")
-
     result = ""
     unit_idx = 0
     while n > 0:
@@ -159,27 +164,22 @@ def num_to_chinese(num_str):
             result = block_str + units[unit_idx] + result
         n //= 10000
         unit_idx += 1
-    
-    if result.startswith("一十"):
-        result = result[1:]
-        
+    if result.startswith("一十"): result = result[1:]
     return result
 
 async def generate_voice_async(text, output_file):
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+25%")
     await communicate.save(output_file)
 
 def create_audio_file(text, report_type):
-    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
+    print("🎙️ 正在生成語音報導...")
     try:
-        # (1) 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
         month_day = tw_now.strftime('%m-%d')
-        # 檔名加入早晚報標識
+        # 檔名加上時段，避免重複
         filename = f"托蘭市場{report_type} ({month_day}).mp3"
 
-        # (2) 清理文字
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
         clean_text = re.sub(
@@ -191,7 +191,6 @@ def create_audio_file(text, report_type):
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
-        # (3) 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
         return filename
     except Exception as e:
@@ -246,16 +245,17 @@ def main():
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     
-    # 判斷早晚報 (假設 5:00 ~ 16:00 為早報時段，包含早上9點那場)
+    # 判斷早晚報 (假設 5:00 ~ 16:00 為早報時段)
     current_hour = tw_now.hour
     if 5 <= current_hour < 16:
         report_type = "早報"
     else:
         report_type = "晚報"
 
-    print(f"🕒 當前台灣時間: {tw_now}, 執行報告類型: {report_type}")
+    print(f"🕒 台灣時間: {tw_now}, 報告類型: {report_type}")
 
-    yesterday = tw_now - pd.Timedelta(hours=14)
+    # 數據比較範圍：過去 25 小時
+    yesterday = tw_now - pd.Timedelta(hours=25)
     
     if not pd.api.types.is_datetime64_any_dtype(df['時間']):
         df['時間'] = pd.to_datetime(df['時間'])
