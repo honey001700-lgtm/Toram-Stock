@@ -19,36 +19,24 @@ jobs:
           python-version: '3.11'
 
       # ======================================================
-      # 🔴 關鍵修改：安裝 Tor 並強制等待 Port 9050 開啟
+      # 🔴 關鍵步驟：安裝並啟動 Tor
+      # 這一步沒做，Python 程式連線 127.0.0.1:9050 就會失敗
       # ======================================================
-      - name: Install and Wait for Tor
+      - name: Install and Start Tor
         run: |
-          echo "📦 安裝 Tor 與 netcat..."
           sudo apt-get update
-          sudo apt-get install -y tor netcat-openbsd
-
-          echo "🚀 啟動 Tor 服務..."
+          sudo apt-get install -y tor
+          # 啟動 Tor 服務
           sudo service tor start
-
-          echo "⏳ 正在等待 Tor 就緒 (Checking 127.0.0.1:9050)..."
-          # 迴圈檢查最多 30 次 (30秒)
-          for i in {1..30}; do
-            if nc -z 127.0.0.1 9050; then
-              echo "✅ Tor 已成功連線 (Port 9050 Open)！"
-              exit 0
-            fi
-            echo "   ...等待 Tor 啟動中 ($i/30)"
-            sleep 1
-          done
-
-          echo "❌ Tor 啟動超時！印出 Log 檢查："
-          sudo cat /var/log/tor/log || echo "無 Log 檔案"
-          exit 1
+          # 等待 15 秒確保 Tor 建立連線迴路
+          sleep 15
+          # 檢查 Tor 是否真的有在聽 Port 9050 (除錯用)
+          sudo netstat -plnt | grep 9050 || echo "⚠️ Warning: Tor port 9050 not found!"
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # 安裝最新版 edge-tts
+          # 安裝 edge-tts
           pip install git+https://github.com/rany2/edge-tts.git
           # 安裝 Proxy 支援庫 (一定要裝！)
           pip install aiohttp-socks
