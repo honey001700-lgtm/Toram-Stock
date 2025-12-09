@@ -2,6 +2,9 @@ name: Toram Daily Report
 
 on:
   schedule:
+    # 分 時 日 月 週
+    # 40 1  * * * -> UTC 01:40 = 台灣 09:40
+    # 40 13 * * * -> UTC 13:40 = 台灣 21:40
     - cron: '40 1,13 * * *'
   workflow_dispatch:
 
@@ -18,42 +21,16 @@ jobs:
         with:
           python-version: '3.11'
 
-      # ======================================================
-      # 🔴 關鍵修改：安裝 Tor 並強制等待 Port 9050 開啟
-      # ======================================================
-      - name: Install and Wait for Tor
-        run: |
-          echo "📦 安裝 Tor 與 netcat..."
-          sudo apt-get update
-          sudo apt-get install -y tor netcat-openbsd
-
-          echo "🚀 啟動 Tor 服務..."
-          sudo service tor start
-
-          echo "⏳ 正在等待 Tor 就緒 (Checking 127.0.0.1:9050)..."
-          # 迴圈檢查最多 30 次 (30秒)
-          for i in {1..30}; do
-            if nc -z 127.0.0.1 9050; then
-              echo "✅ Tor 已成功連線 (Port 9050 Open)！"
-              exit 0
-            fi
-            echo "   ...等待 Tor 啟動中 ($i/30)"
-            sleep 1
-          done
-
-          echo "❌ Tor 啟動超時！印出 Log 檢查："
-          sudo cat /var/log/tor/log || echo "無 Log 檔案"
-          exit 1
-
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # 安裝最新版 edge-tts
-          pip install git+https://github.com/rany2/edge-tts.git
-          # 安裝 Proxy 支援庫 (一定要裝！)
-          pip install aiohttp-socks
-          # 其他依賴
+          pip install --upgrade edge-tts
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
+
+      - name: Check specifically for HsiaoChen
+        run: |  
+          echo "正在檢查微軟伺服器上的台灣語音列表..."
+          edge-tts --list-voices | grep "zh-TW"
 
       - name: Run Daily Report
         env:
