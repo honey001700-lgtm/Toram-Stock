@@ -53,7 +53,7 @@ TARGET_ITEMS = [
     {"search_text": "晶瑪體", "save_as": "晶瑪體", "attr": "防具王石", "slot": "-", "mode": "normal"},
     {"search_text": "似曜隕石", "save_as": "似曜隕石", "attr": "防具王石", "slot": "-", "mode": "normal"},
     {"search_text": "穆爾貢之手", "save_as": "穆爾貢之手", "attr": "防具王石", "slot": "-", "mode": "normal"},
-    {"search_text": "鼯忍", "save_as": "鼯忍", "attr": "防具王石", "slot": "-", "mode": "normal"},
+    {"search_text": "鼯忍", "save_as": "鼯忍", "attr": "防具王石", "slot": "-", "mode": "normal", "search_pos": (385, 400)},
     {"search_text": "黑桃忍者", "save_as": "黑桃忍者", "attr": "防具王石", "slot": "-", "mode": "normal"},
     {"search_text": "兔美", "save_as": "兔美", "attr": "防具王石", "slot": "-", "mode": "normal"},
     {"search_text": "兔麻糬", "save_as": "兔麻糬", "attr": "防具王石", "slot": "-", "mode": "normal"},

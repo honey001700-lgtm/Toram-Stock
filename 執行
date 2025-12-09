@@ -5,5 +5,5 @@ pip install pyinstaller
 pyinstaller --onefile toram_bot.py
 
 git add .
-git commit -m "V_1.2.11"
+git commit -m "V_1.2.30"
 git push origin main
