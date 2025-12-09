@@ -1,4 +1,3 @@
-# daily_report.py
 import os
 import requests
 import pandas as pd
@@ -37,19 +36,14 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
 
     # --- 設定早晚報的情境與結尾 ---
     if report_type == "早報":
-        # 早報情境
         greeting = "早安"
         time_context = "昨晚到今早"
-        # 結尾：鼓勵一天開始 + 預告晚上見
         ending_instruction = "結尾請維持熱情專業，鼓勵玩家把握今天的好時機，最後強制要說『我們今晚見！』"
     else:
-        # 晚報情境
         greeting = "晚安"
         time_context = "今天白天"
-        # 結尾：總結一天 + 提醒休息/掛機 + 預告明早見
         ending_instruction = "結尾請維持溫馨提醒（如風險管理或早點休息），最後強制要說『我們明早見！』"
 
-    # 備用文案
     def get_backup_script():
         return "(AI 分析師連線忙碌中，請直接查看下方數據看板)", 0
     
@@ -87,11 +81,11 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
        - 大漲/新高：開心、恭喜玩家。
        - 大跌/頭肩頂：關心、提醒風險。
     3. **強制格式**：
-       - 價格：**$10,000,000** (粗體+錢字號+千分位)，前後留空白。。
-       - 漲跌：**+237.2%** (粗體+正負號+百分比)，前後留空白。。
-    4. **特徵解讀**：如果物品有「頭肩頂」或「三角收斂」，請順口提到這代表什麼（例如：要注意回檔喔）。
+       - 價格：**$10,000,000** (粗體+錢字號+千分位)，前後留空白。
+       - 漲跌：**+237.2%** (粗體+正負號+百分比)，前後留空白。
+    4. **特徵解讀**：如果物品有「頭肩頂」或「三角收斂」，請順口提到這代表什麼。
     5. **結尾設定 (重要)**：
-       - 請保留原本的風格（有漲有跌、投資需謹慎、賺得盆滿缽滿之類的專業結尾）。
+       - 請保留原本的風格（有漲有跌、投資需謹慎）。
        - {ending_instruction}
     6. 字數約 350 字，多用Emoji。
     """
@@ -127,7 +121,7 @@ def generate_ai_script(market_stats, ai_focus_items, report_type):
     return get_backup_script()
 
 # ==========================================
-# 🎵 使用 Edge-TTS 生成加速語音
+# 🎵 使用 Edge-TTS 生成加速語音 (Proxy 版)
 # ==========================================
 
 def num_to_chinese(num_str):
@@ -135,12 +129,9 @@ def num_to_chinese(num_str):
         n = int(num_str.replace(",", ""))
     except:
         return num_str
-        
     if n == 0: return "零"
-
     units = ['', '萬', '億']
     nums = '零一二三四五六七八九'
-    
     def _block_to_chinese(num):
         s = ""
         if num >= 1000:
@@ -157,7 +148,6 @@ def num_to_chinese(num_str):
         if num > 0:
             s += nums[num]
         return s.strip("零")
-
     result = ""
     unit_idx = 0
     while n > 0:
@@ -167,27 +157,39 @@ def num_to_chinese(num_str):
             result = block_str + units[unit_idx] + result
         n //= 10000
         unit_idx += 1
-    
     if result.startswith("一十"):
         result = result[1:]
-        
     return result
 
 async def generate_voice_async(text, output_file):
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
-    await communicate.save(output_file)
+    # ========================================================
+    # 🔴 關鍵修改：使用 Tor Proxy (127.0.0.1:9050)
+    # ========================================================
+    PROXY_URL = "socks5://127.0.0.1:9050"
+    print(f"🎙️ [Tor Mode] 正在透過 {PROXY_URL} 連線微軟伺服器...")
+    
+    try:
+        communicate = edge_tts.Communicate(
+            text, 
+            "zh-TW-HsiaoChenNeural", 
+            rate="+30%",
+            proxy=PROXY_URL  # <--- 這裡強制指定走 Tor
+        )
+        await communicate.save(output_file)
+        print("✅ 語音生成成功！")
+    except Exception as e:
+        print(f"❌ 語音生成失敗 (Proxy 錯誤?): {e}")
+        # 這裡不拋出錯誤，讓程式可以繼續執行，只是沒有語音檔而已
+        pass
 
 def create_audio_file(text, report_type):
-    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
+    print("🎙️ 準備生成語音報導...")
     try:
-        # (1) 產生動態檔名
         utc_now = datetime.datetime.utcnow()
         tw_now = utc_now + datetime.timedelta(hours=8)
         month_day = tw_now.strftime('%m-%d')
-        # 檔名加入早晚報標識
         filename = f"托蘭市場{report_type} ({month_day}).mp3"
 
-        # (2) 清理文字
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         clean_text = clean_text.replace("###", "").replace("##", "")
         clean_text = re.sub(
@@ -199,11 +201,17 @@ def create_audio_file(text, report_type):
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
-        # (3) 執行非同步生成
+        # 執行非同步生成
         asyncio.run(generate_voice_async(clean_text, filename))
-        return filename
+        
+        # 檢查檔案是否真的存在 (如果 Proxy 失敗，檔案可能沒生成)
+        if os.path.exists(filename):
+            return filename
+        else:
+            print("⚠️ 警告：語音檔未生成，將只發送文字。")
+            return None
     except Exception as e:
-        print(f"❌ 語音生成失敗: {e}")
+        print(f"❌ create_audio_file 發生錯誤: {e}")
         return None
 
 # ==========================================
@@ -246,18 +254,13 @@ def send_discord_webhook(embeds, file_path=None):
 def main():
     print("🚀 SYSTEM CHECK: 腳本開始執行...")
     
-    # 1. 讀取數據
     df, err = load_data(SHEET_URL)
     if df.empty: return
 
-    # 2. 時間與時段判斷
     utc_now = datetime.datetime.utcnow()
     tw_now = utc_now + datetime.timedelta(hours=8)
     
-    # 【關鍵修復】判斷早晚報
     current_hour = tw_now.hour
-    # 早上5點到下午4點之間執行都算早報 (涵蓋 09:40)
-    # 其他時間算晚報 (涵蓋 21:40)
     if 5 <= current_hour < 16:
         report_type = "早報"
     else:
@@ -273,7 +276,6 @@ def main():
     recent_df = df[df['時間'] >= yesterday]
     active_items = recent_df['物品'].unique().tolist()
     
-    # --- 3. 數據收集與分析 ---
     all_changes = [] 
     highlights = []
     
@@ -309,7 +311,6 @@ def main():
         'avg_change': sum(all_changes) / len(all_changes) if all_changes else 0
     }
 
-    # --- 4. 挑選焦點物品 ---
     ai_focus_items = []
     selected_names = set()
     def add_item(item_obj, role_name):
@@ -336,20 +337,13 @@ def main():
         if len(ai_focus_items) >= 6: break
         add_item(h, "重點關注")
 
-    # 5. 生成 AI 報告 (傳入 report_type)
-    # 【關鍵修復】這裡原本少傳了 report_type
     ai_script, color = generate_ai_script(market_stats, ai_focus_items, report_type)
 
-    # 6. 生成音檔
     audio_file_path = None
     if ai_script and "AI 分析師連線忙碌中" not in ai_script:
-        # 【關鍵修復】這裡原本少傳了 report_type
         audio_file_path = create_audio_file(ai_script, report_type)
 
-    # --- 7. 製作 Embeds ---
     embeds = []
-    
-    # [Embed 1] AI 報告 (標題動態顯示早報/晚報)
     embeds.append({
         "title": f"🎙️ 托蘭市場{report_type} ({tw_now.strftime('%m/%d')})",
         "description": ai_script,
@@ -357,7 +351,6 @@ def main():
         "thumbnail": {"url": "https://cdn-icons-png.flaticon.com/512/6997/6997662.png"}
     })
 
-    # [Embed 2] 數據看板
     if highlights:
         highlights.sort(key=lambda x: abs(x['change_pct']), reverse=True)
         fields = []
@@ -388,10 +381,8 @@ def main():
             "footer": {"text": f"統計時間: {tw_now.strftime('%Y-%m-%d %H:%M')} (GMT+8)"}
         })
 
-    # 8. 發送
     send_discord_webhook(embeds, file_path=audio_file_path)
 
-    # 9. 清理暫存
     if audio_file_path and os.path.exists(audio_file_path):
         os.remove(audio_file_path)
         print("🧹 暫存音檔已清理")
