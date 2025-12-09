@@ -2,8 +2,6 @@ name: Toram Daily Report
 
 on:
   schedule:
-    # UTC 01:40 = Taiwan 09:40
-    # UTC 13:40 = Taiwan 21:40
     - cron: '40 1,13 * * *'
   workflow_dispatch:
 
@@ -20,15 +18,30 @@ jobs:
         with:
           python-version: '3.11'
 
+      # ======================================================
+      # 🔴 關鍵步驟：安裝並啟動 Tor
+      # 這一步沒做，Python 程式連線 127.0.0.1:9050 就會失敗
+      # ======================================================
+      - name: Install and Start Tor
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tor
+          # 啟動 Tor 服務
+          sudo service tor start
+          # 等待 15 秒確保 Tor 建立連線迴路
+          sleep 15
+          # 檢查 Tor 是否真的有在聽 Port 9050 (除錯用)
+          sudo netstat -plnt | grep 9050 || echo "⚠️ Warning: Tor port 9050 not found!"
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # 安裝開發版以修復 Token 問題，但在 GitHub Actions IP 上仍可能被擋
+          # 安裝 edge-tts
           pip install git+https://github.com/rany2/edge-tts.git
+          # 安裝 Proxy 支援庫 (一定要裝！)
+          pip install aiohttp-socks
+          # 其他依賴
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
-
-      # 移除 "Check specifically for HsiaoChen" 步驟
-      # 因為如果微軟封鎖 IP，該步驟必定失敗並卡住整個流程
 
       - name: Run Daily Report
         env:
