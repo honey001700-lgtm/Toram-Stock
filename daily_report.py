@@ -255,7 +255,7 @@ def main():
 
     print(f"🕒 當前台灣時間: {tw_now}, 執行報告類型: {report_type}")
 
-    yesterday = tw_now - pd.Timedelta(hours=25)
+    yesterday = tw_now - pd.Timedelta(hours=14)
     
     if not pd.api.types.is_datetime64_any_dtype(df['時間']):
         df['時間'] = pd.to_datetime(df['時間'])
