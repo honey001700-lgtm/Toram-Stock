@@ -9,7 +9,6 @@ import re
 import asyncio 
 import edge_tts     
 import google.generativeai as genai 
-import random
 
 # 為了避免 Streamlit 的警告洗版，我們把它靜音
 import logging
@@ -175,49 +174,15 @@ def num_to_chinese(num_str):
     return result
 
 # ==========================================
-# 🎵 使用 Edge-TTS 生成加速語音 (強化重試版)
+# 🎵 使用 Edge-TTS 生成加速語音 (優化版)
 # ==========================================
 async def generate_voice_async(text, output_file):
-    # 設定重試次數與參數
-    max_retries = 5
-    base_wait_time = 5
-    
-    # 嘗試不同的語音，有時候換個聲音就能繞過封鎖
-    # HsiaoChen (台灣女), YunJhe (台灣男), HsiaoYu (台灣女-不同音色)
-    voices = ["zh-TW-HsiaoChenNeural", "zh-TW-YunJheNeural", "zh-TW-HsiaoYuNeural"]
-    
-    for attempt in range(max_retries):
-        try:
-            # 輪替使用語音 (如果是重試的話)
-            voice = voices[attempt % len(voices)]
-            
-            print(f"🎙️ [第 {attempt+1} 次嘗試] 使用語音: {voice}")
-            
-            # 建立 communicate 物件
-            # rate="+30%" 語速加快
-            # volume="+0%" 音量正常
-            communicate = edge_tts.Communicate(text, voice, rate="+30%", volume="+0%")
-            
-            await communicate.save(output_file)
-            return True # 成功
-            
-        except Exception as e:
-            err_msg = str(e)
-            print(f"⚠️ TTS 生成失敗 ({attempt+1}/{max_retries}): {err_msg}")
-            
-            if "401" in err_msg or "Unauthorized" in err_msg:
-                # 遇到 401 代表被擋，等待時間要拉長 (隨機 10~20秒)
-                wait_time = base_wait_time * (attempt + 1) + random.uniform(5, 15)
-                print(f"🛑 被微軟阻擋 (401)，冷卻 {wait_time:.1f} 秒後重試...")
-                await asyncio.sleep(wait_time)
-            else:
-                # 其他網路錯誤，稍作等待
-                await asyncio.sleep(3)
-    
-    return False # 最終失敗
+    # 增加 rate="+30%" 語速稍微加快，聽起來較有精神
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
+    await communicate.save(output_file)
 
 def create_audio_file(text, report_type):
-    print("🎙️ 正在準備語音報導...")
+    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
         # (1) 產生動態檔名
         utc_now = datetime.datetime.utcnow()
@@ -226,30 +191,39 @@ def create_audio_file(text, report_type):
         filename = f"托蘭市場{report_type} ({month_day}).mp3"
 
         # (2) 清理文字
+        # 去除 Markdown 粗體
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
+        # 去除標題符號
         clean_text = clean_text.replace("###", "").replace("##", "")
+        
+        # 處理金錢格式：$10,000 -> 一萬眾神幣 (使用您的 num_to_chinese 函式)
         clean_text = re.sub(
             r'\$([0-9,]+)', 
             lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
             clean_text
         )
-        # 移除 Emoji
+        
+        # ⚠️ 移除原本的全域逗號替換，保留語氣停頓
+        # clean_text = clean_text.replace(",", "")  <-- 建議註解掉這行
+        
+        # 去除 Emoji (避免 Edge-TTS 讀出奇怪的描述)
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
-        # (3) 執行非同步生成 (加入重試邏輯後的呼叫)
-        success = asyncio.run(generate_voice_async(clean_text, filename))
+        # (3) 執行非同步生成
+        # 如果是在 Jupyter Notebook 中執行，需改用 nest_asyncio，但在 .py 腳本中這樣寫是正確的
+        asyncio.run(generate_voice_async(clean_text, filename))
         
-        # 檢查結果
-        if success and os.path.exists(filename) and os.path.getsize(filename) > 0:
+        # 檢查檔案是否真的生成成功
+        if os.path.exists(filename) and os.path.getsize(filename) > 0:
             print(f"✅ 語音生成成功：{filename}")
             return filename
         else:
-            print("❌ 語音生成最終失敗，本次將不發送語音檔。")
+            print("❌ 語音生成失敗：檔案未建立或為空")
             return None
 
     except Exception as e:
-        print(f"❌ 語音生成發生未預期例外: {e}")
+        print(f"❌ 語音生成發生例外狀況: {e}")
         return None
 
 # ==========================================
