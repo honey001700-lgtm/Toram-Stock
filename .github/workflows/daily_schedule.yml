@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Cheakout code
         uses: actions/checkout@v3
 
       - name: Set up Python
@@ -24,9 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          # ⚠️ 強制重新安裝 GitHub 上的最新版，並加入 gTTS 作為備案
           pip install --force-reinstall git+https://github.com/rany2/edge-tts.git
-          pip install gTTS
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
 
       - name: Run Daily Report
