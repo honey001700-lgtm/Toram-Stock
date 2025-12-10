@@ -24,8 +24,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install --force-reinstall git+https://github.com/rany2/edge-tts.git
+          # 1. 先安裝一般工具庫 (標準安裝，利用快取加速)
           pip install pandas numpy requests plotly scipy streamlit google-generativeai openpyxl
+          # 2. 最後單獨強制安裝 edge-tts 最新開發版 (這是解決 401 的關鍵，必須強制覆蓋)
+          pip install --force-reinstall git+https://github.com/rany2/edge-tts.git
 
       - name: Run Daily Report
         env:
