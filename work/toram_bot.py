@@ -133,6 +133,8 @@ TARGET_ITEMS = [
     {"search_text": "水底的寂靜", "save_as": "水底的寂靜", "attr": "其他雜項", "slot": "-", "mode": "normal"},
     {"search_text": "10周年歡慶箱", "save_as": "10周年歡慶箱", "attr": "其他雜項", "slot": "-", "mode": "normal"},
 
+    {"search_text": "波姆餅乾", "save_as": "波姆餅乾", "attr": "其他雜項", "slot": "-", "mode": "normal"},
+
     {"search_text": "霞的武士刀", "save_as": "霞的武士刀", "attr": "不限洞", "slot": "-", "mode": "normal"},
     {"search_text": "佩司博拉多", "save_as": "佩司博拉多", "attr": "不限洞", "slot": "-", "mode": "normal"},
     {"search_text": "梅普露的盾", "save_as": "梅普露的盾", "attr": "不限洞", "slot": "-", "mode": "normal"},
@@ -152,6 +154,7 @@ TARGET_ITEMS = [
     {"search_text": "波花護符", "save_as": "波花護符", "attr": "雙洞", "slot": 2, "mode": "normal"},
     {"search_text": "海星手裏劍", "save_as": "海星手裏劍", "attr": "雙洞", "slot": 2, "mode": "normal"},
     {"search_text": "龍環", "save_as": "龍環", "attr": "雙洞", "slot": 2, "mode": "normal"},
+    {"search_text": "暖暖護身符", "save_as": "暖暖護身符", "attr": "雙洞", "slot": 2, "mode": "normal"},
     {"search_text": "穿越時空的懷錶", "save_as": "穿越時空的懷錶", "attr": "雙洞", "slot": 2, "mode": "normal"},
 
     {"search_text": "巴拉迪奧之槍", "save_as": "巴拉迪奧之槍", "attr": "外觀", "slot": "-", "mode": "app"},
