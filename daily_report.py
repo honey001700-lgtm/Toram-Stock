@@ -179,7 +179,7 @@ def num_to_chinese(num_str):
 async def generate_voice_async(text, output_file):
     # 增加 rate="+30%" 語速稍微加快
     # ⚠️ 注意: 若 text 過長(超過5000字)或為空，這裡會拋出 No audio received
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+10%")
     await communicate.save(output_file)
 
 def create_audio_file(text, report_type):
