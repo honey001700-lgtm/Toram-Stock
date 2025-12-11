@@ -17,10 +17,7 @@ logging.getLogger("streamlit").setLevel(logging.ERROR)
 from utils.preprocess import load_data, filter_and_prepare_data
 from analysis.trend import analyze_trend
 from analysis.patterns import detect_patterns, detect_events
-from dotenv import load_dotenv
 
-load_dotenv() 
-    
 # ==========================================
 # 🔑 設定區
 # ==========================================
@@ -181,7 +178,7 @@ def num_to_chinese(num_str):
 # ==========================================
 async def generate_voice_async(text, output_file):
     # 增加 rate="+30%" 語速稍微加快，聽起來較有精神
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+15%")
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+30%")
     await communicate.save(output_file)
 
 def create_audio_file(text, report_type):
@@ -204,10 +201,7 @@ def create_audio_file(text, report_type):
             r'\$([0-9,]+)', 
             lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
             clean_text
-        )
-        
-        # ⚠️ 移除原本的全域逗號替換，保留語氣停頓
-        # clean_text = clean_text.replace(",", "")  <-- 建議註解掉這行
+        )        
         
         # 去除 Emoji (避免 Edge-TTS 讀出奇怪的描述)
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
