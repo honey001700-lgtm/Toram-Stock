@@ -174,68 +174,56 @@ def num_to_chinese(num_str):
     return result
 
 # ==========================================
-# 🎵 使用 Edge-TTS 生成加速語音 (除錯增強版)
+# 🎵 使用 Edge-TTS 生成加速語音 (優化版)
 # ==========================================
 async def generate_voice_async(text, output_file):
-    # 增加 rate="+30%" 語速稍微加快
-    # ⚠️ 注意: 若 text 過長(超過5000字)或為空，這裡會拋出 No audio received
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+10%")
+    # 增加 rate="+30%" 語速稍微加快，聽起來較有精神
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+15%")
     await communicate.save(output_file)
 
 def create_audio_file(text, report_type):
     print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
-    
-    # (1) 產生動態檔名
-    utc_now = datetime.datetime.utcnow()
-    tw_now = utc_now + datetime.timedelta(hours=8)
-    month_day = tw_now.strftime('%m-%d')
-    filename = f"托蘭市場{report_type} ({month_day}).mp3"
-
     try:
-        # (2) 清理文字 (增加除錯資訊)
-        print(f"🔍 [Debug] 原始文字長度: {len(text)}")
-        
+        # (1) 產生動態檔名
+        utc_now = datetime.datetime.utcnow()
+        tw_now = utc_now + datetime.timedelta(hours=8)
+        month_day = tw_now.strftime('%m-%d')
+        filename = f"托蘭市場{report_type} ({month_day}).mp3"
+
+        # (2) 清理文字
         # 去除 Markdown 粗體
         clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
         # 去除標題符號
         clean_text = clean_text.replace("###", "").replace("##", "")
         
-        # 處理金錢格式
+        # 處理金錢格式：$10,000 -> 一萬眾神幣 (使用您的 num_to_chinese 函式)
         clean_text = re.sub(
             r'\$([0-9,]+)', 
             lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
             clean_text
         )
         
-        # 去除 Emoji
+        # ⚠️ 移除原本的全域逗號替換，保留語氣停頓
+        # clean_text = clean_text.replace(",", "")  <-- 建議註解掉這行
+        
+        # 去除 Emoji (避免 Edge-TTS 讀出奇怪的描述)
         clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
         clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
         
-        # ⚠️ 關鍵修正：去除多餘空白與換行，避免 API 誤判
-        clean_text = clean_text.strip()
-        
-        print(f"🔍 [Debug] 清理後文字長度: {len(clean_text)}")
-        print(f"🔍 [Debug] 前50字預覽: {clean_text[:50]}")
-
-        # (3) 安全檢查：如果是空字串，不要呼叫 API
-        if len(clean_text) == 0:
-            print("❌ 錯誤：TTS 文字內容為空 (可能是 Regex 過濾過度或 Gemini 未生成文字)")
-            return None
-
-        # (4) 執行非同步生成
+        # (3) 執行非同步生成
+        # 如果是在 Jupyter Notebook 中執行，需改用 nest_asyncio，但在 .py 腳本中這樣寫是正確的
         asyncio.run(generate_voice_async(clean_text, filename))
         
-        # 檢查檔案
+        # 檢查檔案是否真的生成成功
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            print(f"✅ 語音生成成功：{filename} ({os.path.getsize(filename)/1024:.2f} KB)")
+            print(f"✅ 語音生成成功：{filename}")
             return filename
         else:
-            print("❌ 語音生成失敗：檔案未建立或大小為 0")
+            print("❌ 語音生成失敗：檔案未建立或為空")
             return None
 
     except Exception as e:
         print(f"❌ 語音生成發生例外狀況: {e}")
-        # 如果是 No audio received，通常代表版本過舊或文字有問題
         return None
 
 # ==========================================
