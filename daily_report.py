@@ -177,78 +177,56 @@ def num_to_chinese(num_str):
     return result
 
 # ==========================================
-# 🎵 Edge-TTS 語音生成 (Windows 強力修復版)
+# 🎵 使用 Edge-TTS 生成加速語音 (優化版)
 # ==========================================
-import subprocess # 用來執行命令列指令
-
-# 🔧 關鍵修正：解決 Windows 上 asyncio 報錯的問題
-# 這行代碼必須在任何 asyncio.run 之前執行
-if os.name == 'nt':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 async def generate_voice_async(text, output_file):
-    # 使用最穩定的曉雨 (HsiaoYu)
-    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoYuNeural")
+    # 增加 rate="+30%" 語速稍微加快，聽起來較有精神
+    communicate = edge_tts.Communicate(text, "zh-TW-HsiaoChenNeural", rate="+15%")
     await communicate.save(output_file)
 
 def create_audio_file(text, report_type):
-    print(f"🎙️ 正在生成語音報導 (Edge-TTS)...")
-    
-    # (1) 檔名設定
-    utc_now = datetime.datetime.utcnow()
-    tw_now = utc_now + datetime.timedelta(hours=8)
-    month_day = tw_now.strftime('%m-%d')
-    filename = f"托蘭市場{report_type} ({month_day}).mp3"
-
-    # (2) 嚴格清洗文字 (確保指令列執行時不會因為特殊符號報錯)
-    # 只保留中文、英文、數字、逗號、句號
-    clean_text = re.sub(r'[^\u4e00-\u9fa5a-zA-Z0-9,，.。!！?？\s]', '', text)
-    clean_text = re.sub(r'\s+', ' ', clean_text).strip()
-    
-    if not clean_text:
-        print("❌ 錯誤：文字清洗後為空")
-        return None
-
-    # (3) 嘗試方法 A: 標準 Python 呼叫 (已套用 Windows 補丁)
+    print("🎙️ 正在生成語音報導 (Edge-TTS 加速版)...")
     try:
-        if os.path.exists(filename): os.remove(filename) # 先刪除舊檔
+        # (1) 產生動態檔名
+        utc_now = datetime.datetime.utcnow()
+        tw_now = utc_now + datetime.timedelta(hours=8)
+        month_day = tw_now.strftime('%m-%d')
+        filename = f"托蘭市場{report_type} ({month_day}).mp3"
+
+        # (2) 清理文字
+        # 去除 Markdown 粗體
+        clean_text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) 
+        # 去除標題符號
+        clean_text = clean_text.replace("###", "").replace("##", "")
         
+        # 處理金錢格式：$10,000 -> 一萬眾神幣 (使用您的 num_to_chinese 函式)
+        clean_text = re.sub(
+            r'\$([0-9,]+)', 
+            lambda m: f"{num_to_chinese(m.group(1))}眾神幣", 
+            clean_text
+        )
+        
+        # ⚠️ 移除原本的全域逗號替換，保留語氣停頓
+        # clean_text = clean_text.replace(",", "")  <-- 建議註解掉這行
+        
+        # 去除 Emoji (避免 Edge-TTS 讀出奇怪的描述)
+        clean_text = re.sub(r'[\U00010000-\U0010ffff]', '', clean_text) 
+        clean_text = re.sub(r'[\u2600-\u27bf]', '', clean_text)
+        
+        # (3) 執行非同步生成
+        # 如果是在 Jupyter Notebook 中執行，需改用 nest_asyncio，但在 .py 腳本中這樣寫是正確的
         asyncio.run(generate_voice_async(clean_text, filename))
         
+        # 檢查檔案是否真的生成成功
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            print(f"✅ Edge-TTS 生成成功 (Python 模式)")
-            return filename
-            
-    except Exception as e:
-        print(f"⚠️ Python 模式失敗 ({e})，嘗試切換至 CMD 模式...")
-
-    # (4) 嘗試方法 B: 直接呼叫系統指令 (暴力解法)
-    # 如果上面失敗，這段會直接在終端機執行 edge-tts 指令，通常能繞過所有 Python 環境問題
-    try:
-        print("⚡ 正在嘗試 CMD 命令列模式...")
-        # 構建指令： edge-tts --text "內容" --write-media "檔名.mp3" --voice zh-TW-HsiaoYuNeural
-        # 注意：為了避免 CMD 對引號的解析錯誤，我們再次簡化文字
-        safe_text = clean_text.replace('"', '').replace("'", "")
-        
-        cmd = [
-            "edge-tts",
-            "--voice", "zh-TW-HsiaoYuNeural",
-            "--text", safe_text,
-            "--write-media", filename
-        ]
-        
-        # 執行指令
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-        
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            print(f"✅ Edge-TTS 生成成功 (CMD 模式)")
+            print(f"✅ 語音生成成功：{filename}")
             return filename
         else:
-            print(f"❌ CMD 模式也失敗。錯誤訊息:\n{result.stderr}")
+            print("❌ 語音生成失敗：檔案未建立或為空")
             return None
-            
+
     except Exception as e:
-        print(f"❌ 所有生成嘗試皆失敗: {e}")
+        print(f"❌ 語音生成發生例外狀況: {e}")
         return None
 
 # ==========================================
